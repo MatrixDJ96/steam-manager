@@ -56,6 +56,7 @@ modifies game files or `appmanifest_*.acf`.
 │   │   ├── appinfo.py               # binary appinfo.vdf parser
 │   │   ├── scopebuddy.py            # ScopeBuddy observe + stub init
 │   │   ├── compat_tools.py          # discovery of installed compat tools (Proton custom + official)
+│   │   └── backups.py               # atomic .tar.gz checkpoints
 ├── tests/
 │   ├── fixtures/                    # synthetic VDF + TOML fixtures
 │   ├── conftest.py                  # fake_steam fixture
@@ -67,6 +68,7 @@ External paths used at runtime:
 
 ```text
 ~/.config/steam-manager/policies.toml             # user override
+~/.local/state/steam-manager/backups/<ts>.tar.gz  # checkpoint archives
 ~/.config/scopebuddy/games/steam/<appid>.conf     # ScopeBuddy per-game configs
 ```
 
@@ -100,3 +102,12 @@ section lookups go through `io/_vdf_util.ci_get()`.
 - **`appinfo.py`** — `parse(path) -> dict[str, str]`. Custom parser for
   Steam's binary `appinfo.vdf` cache (v29 indexed format + legacy fallback).
   Returns `{}` on parse error so callers can fall back gracefully.
+
+## 5. Backup format
+
+Each checkpoint is a single `.tar.gz` produced atomically (written to a
+`.tmp` file then renamed) and contains:
+
+```text
+manifest.json
+```
