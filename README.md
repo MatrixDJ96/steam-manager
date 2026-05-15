@@ -56,7 +56,7 @@ conventions for contributors and coding agents are in `AGENTS.md`.
 |---------------------------------------------------|---------------------------|----------------------------------------------------------------|
 | [README](README.md)                               | Everyone                  | What it is / is not.                                           |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)      | Contributor               | Internals.                                                     |
-| [AGENTS.md](AGENTS.md)                            | Contributor, all agents   | Build commands, conventions.                                   |
+| [AGENTS.md](AGENTS.md)                            | Contributor, all agents   | Build commands, conventions, gotchas.                          |
 
 ## License
 

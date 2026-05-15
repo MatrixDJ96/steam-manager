@@ -13,6 +13,8 @@ pull requests to `main`. `scripts/build.sh` activates `.venv` unless a venv is a
 
 ## Layout
 
+- `src/steam_manager/io/` — VDF, policy TOML, backup, ScopeBuddy and compat-tool file I/O and
+  the GitHub releases client, no Typer or Rich.
 - `src/steam_manager/{models,policy,safety,render}.py` — shared dataclasses, the policy merge
   engine, the Steam pid probe, the shared Rich tables, messages and questionary prompts.
 - `src/steam_manager/policies.toml` — the factory policy, bundled as package data.
@@ -26,4 +28,12 @@ pull requests to `main`. `scripts/build.sh` activates `.venv` unless a venv is a
   `src/steam_manager/__init__.py` together: no test compares the two.
 - A `requires-python` change updates the Python matrix in `.github/workflows/ci.yml`.
 
+## Gotchas
+
+- `cli/_rich.py` swaps the `__class__` of Typer's Click commands for rich-click's, and plain
+  Typer help loses the aligned `--help` columns: keep the rich-click integration and the
+  `click`/`typer`/`rich-click` pins in `pyproject.toml`.
+
 - [README.md](README.md) — what the tool is and is not.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — module reference and backup format; internal
+  API details go here.

@@ -18,6 +18,8 @@ modifies game files or `appmanifest_*.acf`.
 - Read and write per-user launch options (`localconfig.vdf`).
 - Express the desired state declaratively in `policies.toml`, with per
   app-type sections and per-AppID overrides.
+- Multi-user aware: operate on the active local account, on all local
+  accounts, or on an explicit list.
 
 ### Non-goals
 
@@ -61,6 +63,15 @@ modifies game files or `appmanifest_*.acf`.
 │   │   ├── compat_tools.py          # discovery of installed compat tools (Proton custom + official)
 │   │   ├── github_releases.py       # GitHub Releases API discovery (self-update)
 │   │   └── backups.py               # atomic .tar.gz checkpoints
+│   └── cli/                         # Typer entry + each command in its own file
+│       ├── app.py                   # Typer() singleton + root callback
+│       ├── _common.py               # ExitCode, path helpers, env-var overrides
+│       ├── _rich.py                 # install_rich_click() monkey-patch
+│       ├── _checkpoint.py           # make_checkpoint() — single manifest schema
+│       ├── _steam_guard.py          # check_steam_closed() refuses writes while alive
+│       ├── _appinfo.py              # appinfo_types (lru_cache per root) + is_listable filter
+│       ├── _update_check.py         # passive newer-release notifier (24h cache, stderr)
+│       ├── _targets.py              # --user/--all-users resolution + banner
 ├── tests/
 │   ├── fixtures/                    # synthetic VDF + TOML fixtures
 │   ├── conftest.py                  # fake_steam fixture
@@ -73,6 +84,7 @@ External paths used at runtime:
 ```text
 ~/.config/steam-manager/policies.toml             # user override
 ~/.local/state/steam-manager/backups/<ts>.tar.gz  # checkpoint archives
+~/.local/state/steam-manager/update_check.json    # update notifier cache
 ~/.config/scopebuddy/games/steam/<appid>.conf     # ScopeBuddy per-game configs
 ```
 
@@ -112,6 +124,33 @@ section lookups go through `io/_vdf_util.ci_get()`.
 - **`appinfo.py`** — `parse(path) -> dict[str, str]`. Custom parser for
   Steam's binary `appinfo.vdf` cache (v29 indexed format + legacy fallback).
   Returns `{}` on parse error so callers can fall back gracefully.
+- **`backups.py`** — `create_checkpoint(root, timestamp, files, manifest)`,
+  `list_checkpoints(root)`, `extract_checkpoint(archive, targets)`,
+  `prune_checkpoints(root, limit)`. Atomic via temp file + rename.
+
+### `cli/` — Typer commands
+
+Shared CLI helpers (private to the cli/ layer):
+
+- **`_rich.py`** — `install_rich_click(app)`: the monkey-patch chain that
+  rewires Click to rich-click with aligned `--help` columns. Called by
+  `main()` exactly once before dispatch.
+- **`_checkpoint.py`** — `make_checkpoint(trigger, files, users,
+  max_backups)` + `build_steam_files(ctx, users)`. The single source of
+  truth for the checkpoint manifest schema; every destructive command goes
+  through here.
+- **`_steam_guard.py`** — `check_steam_closed(force)`: exits with
+  `STEAM_RUNNING` when Steam is alive and `--force` isn't set.
+- **`_update_check.py`** — the passive newer-release notifier: fired from the
+  Click result callback, 24h JSON cache, single 2s-timeout GitHub call,
+  stderr-only banner; active only in the frozen binary and disabled by
+  `STEAM_MANAGER_NO_UPDATE_NOTIFIER`.
+- **`_appinfo.py`** — `appinfo_types()` (cached per Steam root through an
+  `@lru_cache` helper), `is_listable`, `NON_GAME_NAME_PREFIXES`. The "what
+  counts as a game" filter shared by list/diff/apply/scopebuddy.
+- **`_targets.py`** — `effective_target_spec`, `resolve_target_users`,
+  `target_users_banner`: turn `--user`/`--all-users` flags into a concrete
+  user list and a Rich-markup banner.
 
 ## 5. Backup format
 
@@ -121,3 +160,9 @@ Each checkpoint is a single `.tar.gz` produced atomically (written to a
 ```text
 manifest.json
 ```
+
+`manifest.json` records:
+
+- `created_at` — ISO-8601 local timestamp (naive, no timezone offset).
+- `system` — bool, whether `config.vdf` is in the archive.
+- `files` — the archive contents.
