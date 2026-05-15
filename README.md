@@ -11,6 +11,8 @@ config helpers.
 ## What it does
 
 - Discovers every installed game across all Steam library folders.
+- Expresses the desired state declaratively in `policies.toml`, with per
+  app-type sections and per-AppID overrides.
 
 ## What it does NOT do
 

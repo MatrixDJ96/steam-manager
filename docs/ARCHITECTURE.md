@@ -16,6 +16,8 @@ modifies game files or `appmanifest_*.acf`.
 - Discover installed games across every registered Steam library folder.
 - Read and write the per-app compatibility tool (`config.vdf`).
 - Read and write per-user launch options (`localconfig.vdf`).
+- Express the desired state declaratively in `policies.toml`, with per
+  app-type sections and per-AppID overrides.
 
 ### Non-goals
 
@@ -39,6 +41,7 @@ modifies game files or `appmanifest_*.acf`.
 │   ├── __init__.py                  # __version__ (paired with pyproject.toml)
 │   ├── __main__.py                  # python -m steam_manager → cli.main()
 │   ├── models.py                    # SteamUser, SteamApp, SteamContext, ShortcutsFile, CompatTool
+│   ├── policies.toml                # factory policy (bundled with package)
 │   ├── io/                          # filesystem I/O — no Typer, no Rich
 │   │   ├── __init__.py
 │   │   ├── _vdf_util.py             # ci_get() — case-insensitive VDF lookups
@@ -46,11 +49,18 @@ modifies game files or `appmanifest_*.acf`.
 │   │   ├── config_vdf.py            # compat-tool R/W on config.vdf
 │   │   ├── localconfig_vdf.py       # launch-options R/W on localconfig.vdf
 │   │   ├── shortcuts_vdf.py         # binary VDF R/W on shortcuts.vdf
+│   │   ├── policies_toml.py         # user policy file R/W (tomlkit-based)
 ├── tests/
 │   ├── fixtures/                    # synthetic VDF + TOML fixtures
 │   ├── conftest.py                  # fake_steam fixture
 └── docs/
     └── ARCHITECTURE.md              # this document
+```
+
+External paths used at runtime:
+
+```text
+~/.config/steam-manager/policies.toml             # user override
 ```
 
 ## 4. Module reference
@@ -71,3 +81,6 @@ modifies game files or `appmanifest_*.acf`.
   `clear_all_launch_options`. Per-user `localconfig.vdf`.
 - **`shortcuts_vdf.py`** — `load`, `save`, `validate`, `shortcuts_path`,
   `discover`. Binary VDF for non-Steam shortcuts.
+- **`policies_toml.py`** — `user_path`, `load_doc`, `save_doc`,
+  `validate_toml`, `get_dotted`/`set_dotted`/`unset_dotted`,
+  `render_effective_doc`. `tomlkit`-based to preserve user comments.

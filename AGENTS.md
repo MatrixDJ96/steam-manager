@@ -13,6 +13,7 @@ pull requests to `main`. `scripts/build.sh` activates `.venv` unless a venv is a
 
 ## Layout
 
+- `src/steam_manager/policies.toml` — the factory policy, bundled as package data.
 - `tests/conftest.py` — the `fake_steam` fixture, a synthetic Steam tree under `tmp_path`.
 
 ## Conventions
