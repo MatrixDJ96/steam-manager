@@ -13,6 +13,10 @@ config helpers.
 - Discovers every installed game across all Steam library folders.
 - Expresses the desired state declaratively in `policies.toml`, with per
   app-type sections and per-AppID overrides.
+- Takes an atomic `.tar.gz` checkpoint before every `apply`, `clear`, and
+  `shortcuts edit`, with an interactive restore command.
+- Edits Steam's binary `shortcuts.vdf` (non-Steam games) via a JSON
+  round-trip in `$EDITOR`, preserving int32/string typing.
 
 ## What it does NOT do
 
@@ -39,6 +43,12 @@ ignore = true                  # exclude one AppID entirely
 [overrides.2183900]
 launch_options = "DXVK_FRAME_RATE=0 scopebuddy -- %command%"
 ```
+
+## Safety
+
+- **Steam must be closed** while you `apply`, `restore`, `clear`, or
+  `shortcuts edit`. The tool detects a running Steam via
+  `~/.steam/steam.pid` and refuses to run. Use `--force` to override.
 
 ## Development
 

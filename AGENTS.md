@@ -35,6 +35,8 @@ pull requests to `main`. `scripts/build.sh` activates `.venv` unless a venv is a
 - `cli/_rich.py` swaps the `__class__` of Typer's Click commands for rich-click's, and plain
   Typer help loses the aligned `--help` columns: keep the rich-click integration and the
   `click`/`typer`/`rich-click` pins in `pyproject.toml`.
+- `shortcuts.vdf` is binary VDF with explicit int/string types (`io/shortcuts_vdf.py`); text
+  VDF drops them, which is why `shortcuts edit` round-trips through JSON.
 
 - [README.md](README.md) — what the tool is and is not.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — module reference and backup format; internal

@@ -74,6 +74,7 @@ modifies game files or `appmanifest_*.acf`.
 │       ├── app.py                   # Typer() singleton + root callback
 │       ├── _common.py               # ExitCode, path helpers, env-var overrides
 │       ├── _rich.py                 # install_rich_click() monkey-patch
+│       ├── _editor.py               # choose_editor() used by `shortcuts edit`
 │       ├── _checkpoint.py           # make_checkpoint() — single manifest schema
 │       ├── _steam_guard.py          # check_steam_closed() refuses writes while alive
 │       ├── _appinfo.py              # appinfo_types (lru_cache per root) + is_listable filter
@@ -86,8 +87,11 @@ modifies game files or `appmanifest_*.acf`.
 │       ├── diff_cmd.py              # `diff` — preview policy drift (read-only; exit 1 if drift)
 │       ├── apply_cmd.py             # `apply` — write policy drift to disk (auto-backup, no dry-run)
 │       ├── clear_cmd.py             # `clear` — wipe all compat overrides + launch options (auto-backup)
+│       ├── open_cmd.py              # `open` — open game install dir (or compatdata) via xdg-open
 │       ├── backup_cmd.py            # `backup` — manually create a full checkpoint archive
 │       ├── restore_cmd.py           # `restore` — interactive restore from a previous checkpoint
+│       ├── update_cmd.py            # `update` — self-update binary from GitHub releases
+│       └── shortcuts_cmd.py         # `shortcuts` sub-typer for the binary shortcuts.vdf of non-Steam games (path/show/edit)
 ├── tests/
 │   ├── fixtures/                    # synthetic VDF + TOML fixtures
 │   ├── conftest.py                  # fake_steam fixture
@@ -140,6 +144,9 @@ section lookups go through `io/_vdf_util.ci_get()`.
 - **`appinfo.py`** — `parse(path) -> dict[str, str]`. Custom parser for
   Steam's binary `appinfo.vdf` cache (v29 indexed format + legacy fallback).
   Returns `{}` on parse error so callers can fall back gracefully.
+- **`github_releases.py`** — GitHub Releases API discovery for self-update:
+  stdlib `urllib.request` + `json` only, returns plain dataclasses for the
+  CLI layer to render. Used by `update` and the passive update notifier.
 - **`backups.py`** — `create_checkpoint(root, timestamp, files, manifest)`,
   `list_checkpoints(root)`, `extract_checkpoint(archive, targets)`,
   `prune_checkpoints(root, limit)`. Atomic via temp file + rename.
@@ -151,6 +158,7 @@ Shared CLI helpers (private to the cli/ layer):
 - **`_rich.py`** — `install_rich_click(app)`: the monkey-patch chain that
   rewires Click to rich-click with aligned `--help` columns. Called by
   `main()` exactly once before dispatch.
+- **`_editor.py`** — `choose_editor()`: `$EDITOR` → `vi`/`nano`/`nvim`.
 - **`_checkpoint.py`** — `make_checkpoint(trigger, files, users,
   max_backups)` + `build_steam_files(ctx, users)`. The single source of
   truth for the checkpoint manifest schema; every destructive command goes
@@ -189,12 +197,15 @@ Each checkpoint is a single `.tar.gz` produced atomically (written to a
 manifest.json
 config.vdf                            # system-wide compat config (apply/clear/manual)
 users/<account>/localconfig.vdf       # one per affected user (apply/clear/manual)
+users/<account>/shortcuts.vdf         # shortcuts-edit
 ```
 
 `manifest.json` records:
 
 - `created_at` — ISO-8601 local timestamp (naive, no timezone offset).
 - `system` — bool, whether `config.vdf` is in the archive.
+- `users` — list of account names whose `localconfig.vdf` or
+  `shortcuts.vdf` is in the archive.
 - `files` — the archive contents.
 
 The schema is intentionally minimal: it stores no drift snapshot, because
