@@ -284,6 +284,33 @@ terminal:
 steam-manager scopebuddy observe   # missing/orphan report, exit 1 on issues
 ```
 
+## Pin to a specific release when installing on a new machine
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MatrixDJ96/steam-manager/main/scripts/install.sh \
+    | STEAM_MANAGER_VERSION=v1.0.0 bash
+```
+
+Useful in `Dockerfile`s and provisioning scripts where you want a
+reproducible install. The installer downloads `steam-manager.sha256`
+alongside the binary and verifies the checksum before placing the file.
+
+Note the prefix is on **`bash`**, not on `curl`. In a pipeline the two
+processes are forked independently and a `VAR=value curl ... | bash` only
+sets `VAR` in `curl`'s environment, which the installer never sees — it
+silently falls back to `latest`. If you prefer, `export STEAM_MANAGER_VERSION=v1.0.0`
+once and then pipe normally works too.
+
+## Install into a non-standard directory
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MatrixDJ96/steam-manager/main/scripts/install.sh \
+    | STEAM_MANAGER_INSTALL_DIR=/opt/bin bash
+```
+
+Add the directory to your `PATH` if it is not already there (the installer
+prints the exact line to add).
+
 ## Update steam-manager itself
 
 ```bash
@@ -292,6 +319,21 @@ steam-manager update --check    # is there a new version? (no download)
 steam-manager update --yes      # non-interactive: skip prompt
 steam-manager update --force    # reinstall the same version
 ```
+
+`update` pulls the latest release tag from GitHub, renders the release
+notes inline (Rich Markdown), and — on confirmation — fetches a fresh copy
+of `scripts/install.sh` at that tag and runs it. The script handles the
+download, SHA-256 verify, and atomic swap on the same filesystem as the
+running binary (Linux unlink-while-mmap semantics make this safe).
+
+Available only on the PyInstaller binary distribution. If you installed
+from source (`pip install -e .` or `pip install steam-manager`), the
+command refuses with a clear message — use `pip install -U` or `git pull`
+instead.
+
+When a newer release exists, some commands print a hint on stderr after they
+finish; the release check behind it reruns once its cached result is 24
+hours old:
 
 ```text
 A new release of steam-manager is available: 1.0.0 → 1.0.1

@@ -13,6 +13,9 @@ library in a single command, with per-AppID exceptions and an automatic
 safety checkpoint before every write. Doing the same through the Steam UI
 takes one right-click per game.
 
+Contents: demo · install · usage · what it does and does not do ·
+configuration · safety · development · docs map · license.
+
 ## Demo
 
 ```text
@@ -33,6 +36,38 @@ $ steam-manager diff
 `diff` is read-only. `apply` writes the changes after taking a `.tar.gz`
 checkpoint. On a real terminal the From column renders red and the To column
 green.
+
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MatrixDJ96/steam-manager/main/scripts/install.sh | bash
+```
+
+or with `wget`:
+
+```bash
+wget -qO- https://raw.githubusercontent.com/MatrixDJ96/steam-manager/main/scripts/install.sh | bash
+```
+
+Re-running the command at any time replaces the binary with the latest
+release. To uninstall: `rm ~/.local/bin/steam-manager`.
+
+**Requirements**: Linux x86_64, `curl` or `wget`. No Python or `pip` needed —
+the binary is fully self-contained (~20 MB).
+
+The installer downloads the binary into `~/.local/bin/` and verifies it
+against the published `.sha256`. If the directory is not on your `PATH`, the
+installer prints the line to add to your shell profile.
+
+### Pin a specific version
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MatrixDJ96/steam-manager/main/scripts/install.sh \
+    | STEAM_MANAGER_VERSION=v1.0.0 bash
+```
+
+The variable goes **before `bash`**, not before `curl` — the installer is the
+bash subprocess, and a prefix on `curl` would only enter `curl`'s environment.
 
 ## Usage
 
@@ -179,7 +214,7 @@ contributors and coding agents are in `AGENTS.md`.
 
 | Document                                          | Audience                  | Contents                                                       |
 |---------------------------------------------------|---------------------------|----------------------------------------------------------------|
-| [README](README.md)                               | Everyone                  | What it is / is not.                                           |
+| [README](README.md)                               | Everyone                  | Quickstart, install, demo, what it is / is not.                |
 | [docs/HOWTO.md](docs/HOWTO.md)                    | Operator                  | Cookbook recipes for common scenarios.                         |
 | [docs/REFERENCE.md](docs/REFERENCE.md)            | Operator, scripter        | Full configuration schema, exit codes, env vars, terminal compat. |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)      | Contributor               | Internals: module reference, backup format, build pipeline.    |

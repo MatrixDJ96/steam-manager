@@ -78,7 +78,7 @@ pull requests to `main`. `scripts/build.sh` activates `.venv` unless a venv is a
 
 ## Docs
 
-- [README.md](README.md) — what the tool is and is not.
+- [README.md](README.md) — install and the user-facing command tour.
 - [docs/HOWTO.md](docs/HOWTO.md) — task recipes; a new user workflow gets its recipe here.
 - [docs/REFERENCE.md](docs/REFERENCE.md) — policy schema, commands and flags, exit codes,
   environment variables; every user-visible flag or variable is documented here.

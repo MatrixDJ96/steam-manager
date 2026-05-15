@@ -1,7 +1,7 @@
 # steam-manager — Architecture & Internals
 
-This document covers the architecture and internals. For what the tool does
-and does not do see
+This document covers the architecture, module APIs, backup format, build
+pipeline, and testing approach. For end-user installation and commands see
 the [README](../README.md); for common scenarios see
 [`docs/HOWTO.md`](HOWTO.md); for the full configuration schema, exit codes,
 and operator reference see [`docs/REFERENCE.md`](REFERENCE.md).
@@ -60,6 +60,7 @@ this with AST inspection.
 ├── AGENTS.md                        # agent instructions: commands, conventions, gotchas
 ├── scripts/
 │   ├── build.sh                     # PyInstaller --onefile build (emits SHA256)
+│   ├── install.sh                   # one-line installer with version pin + SHA256 verify
 ├── src/steam_manager/
 │   ├── __init__.py                  # __version__ (paired with pyproject.toml)
 │   ├── __main__.py                  # python -m steam_manager → cli.main()
@@ -368,6 +369,12 @@ The TUI stylesheet `app.tcss` is package data and rides the wheel via the
 existing `--collect-data steam_manager`. `scripts/build.sh` also
 collects the `rich_click` submodules and declares `vdf`, `questionary` and
 `tomlkit` as hidden imports.
+
+`scripts/install.sh` is the one-line installer published at
+`raw.githubusercontent.com/MatrixDJ96/steam-manager/main/scripts/install.sh`.
+It downloads the latest GitHub release asset into `~/.local/bin/` (override
+with `STEAM_MANAGER_INSTALL_DIR`), runs a smoke test (`--version`), and warns
+if the install dir is not on `PATH`.
 
 ## 7. Testing
 
