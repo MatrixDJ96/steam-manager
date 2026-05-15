@@ -45,6 +45,7 @@ modifies game files or `appmanifest_*.acf`.
 │   │   ├── discovery.py             # libraryfolders, loginusers, appmanifest_*.acf
 │   │   ├── config_vdf.py            # compat-tool R/W on config.vdf
 │   │   ├── localconfig_vdf.py       # launch-options R/W on localconfig.vdf
+│   │   ├── shortcuts_vdf.py         # binary VDF R/W on shortcuts.vdf
 ├── tests/
 │   ├── fixtures/                    # synthetic VDF + TOML fixtures
 │   ├── conftest.py                  # fake_steam fixture
@@ -68,3 +69,5 @@ modifies game files or `appmanifest_*.acf`.
   `clear_all_compat`. Writes `~/.local/share/Steam/config/config.vdf`.
 - **`localconfig_vdf.py`** — `get_launch_options`, `set_launch_options`,
   `clear_all_launch_options`. Per-user `localconfig.vdf`.
+- **`shortcuts_vdf.py`** — `load`, `save`, `validate`, `shortcuts_path`,
+  `discover`. Binary VDF for non-Steam shortcuts.
