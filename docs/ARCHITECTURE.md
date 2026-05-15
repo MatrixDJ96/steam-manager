@@ -23,6 +23,8 @@ modifies game files or `appmanifest_*.acf`.
 - Read and write per-user launch options (`localconfig.vdf`).
 - Express the desired state declaratively in `policies.toml`, with per
   app-type sections and per-AppID overrides.
+- Take an atomic `.tar.gz` checkpoint of the affected files before every
+  destructive operation, with an interactive restore command.
 - Multi-user aware: operate on the active local account, on all local
   accounts, or on an explicit list.
 
@@ -77,11 +79,15 @@ modifies game files or `appmanifest_*.acf`.
 │       ├── _appinfo.py              # appinfo_types (lru_cache per root) + is_listable filter
 │       ├── _update_check.py         # passive newer-release notifier (24h cache, stderr)
 │       ├── _drift.py                # compute_drift() used by list/diff/apply
+│       ├── _restore_diff.py         # compute_restore_diff() — archive-vs-live preview
 │       ├── _targets.py              # --user/--all-users resolution + banner
 │       ├── _list_render.py          # render_app_groups() — list's Games/Applications panels
 │       ├── list_cmd.py              # `list` — game inventory with compat tool + per-user launch options
 │       ├── diff_cmd.py              # `diff` — preview policy drift (read-only; exit 1 if drift)
 │       ├── apply_cmd.py             # `apply` — write policy drift to disk (auto-backup, no dry-run)
+│       ├── clear_cmd.py             # `clear` — wipe all compat overrides + launch options (auto-backup)
+│       ├── backup_cmd.py            # `backup` — manually create a full checkpoint archive
+│       ├── restore_cmd.py           # `restore` — interactive restore from a previous checkpoint
 ├── tests/
 │   ├── fixtures/                    # synthetic VDF + TOML fixtures
 │   ├── conftest.py                  # fake_steam fixture
@@ -149,6 +155,10 @@ Shared CLI helpers (private to the cli/ layer):
   max_backups)` + `build_steam_files(ctx, users)`. The single source of
   truth for the checkpoint manifest schema; every destructive command goes
   through here.
+- **`_restore_diff.py`** — `compute_restore_diff(archive_path, ctx, users,
+  users_in_archive)`. Extracts the archive into a tempdir and returns a
+  change list compatible with `render.diff_table_str`. Used by `restore`
+  to show a preview before extracting.
 - **`_steam_guard.py`** — `check_steam_closed(force)`: exits with
   `STEAM_RUNNING` when Steam is alive and `--force` isn't set.
 - **`_update_check.py`** — the passive newer-release notifier: fired from the
@@ -177,6 +187,8 @@ Each checkpoint is a single `.tar.gz` produced atomically (written to a
 
 ```text
 manifest.json
+config.vdf                            # system-wide compat config (apply/clear/manual)
+users/<account>/localconfig.vdf       # one per affected user (apply/clear/manual)
 ```
 
 `manifest.json` records:
@@ -184,3 +196,23 @@ manifest.json
 - `created_at` — ISO-8601 local timestamp (naive, no timezone offset).
 - `system` — bool, whether `config.vdf` is in the archive.
 - `files` — the archive contents.
+
+The schema is intentionally minimal: it stores no drift snapshot, because
+the restore preview is computed on the fly by extracting the archive into a
+tempdir and diffing against the live state. `restore` ignores any other
+manifest field, a `changes` list included.
+
+Restore flow (in `cli/restore_cmd.py`):
+
+1. Pick a checkpoint (`--last` or interactive single-select).
+2. Compute a preview via `cli/_restore_diff.compute_restore_diff()`:
+   extract the archive into a `tempfile.TemporaryDirectory`, parse each
+   Steam file with the by-path readers in `io/config_vdf.py`,
+   `io/localconfig_vdf.py` and `io/shortcuts_vdf.py`, compare ScopeBuddy
+   configs byte for byte, and diff each against the live state.
+3. If the diff is empty — the archive is identical to disk — print
+   `would change nothing — already in this state.` and exit OK without
+   extracting.
+4. Otherwise render the diff with `render.diff_table_str()` (same renderer
+   as the `diff` command), prompt for confirmation unless `--yes`, then
+   extract for real.

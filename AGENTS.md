@@ -22,6 +22,8 @@ pull requests to `main`. `scripts/build.sh` activates `.venv` unless a venv is a
 
 ## Conventions
 
+- A new destructive operation takes its checkpoint through `cli/_checkpoint.make_checkpoint()`
+  with its own `trigger`, never a hand-built manifest: `restore` reads that one schema.
 - A new VDF reader looks keys up case-insensitively (`io/_vdf_util.ci_get()`): Steam writes
   `Apps` or `apps` depending on the install.
 - A version bump changes `pyproject.toml` `[project] version` and `__version__` in
