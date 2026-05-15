@@ -29,6 +29,17 @@ modifies game files or `appmanifest_*.acf`.
 ├── AGENTS.md                        # agent instructions: commands, conventions, gotchas
 ├── scripts/
 │   ├── build.sh                     # PyInstaller --onefile build (emits SHA256)
+├── src/steam_manager/
+│   ├── __init__.py                  # __version__ (paired with pyproject.toml)
+│   ├── __main__.py                  # python -m steam_manager → cli.main()
+│   ├── models.py                    # SteamUser, SteamApp, SteamContext, ShortcutsFile, CompatTool
 └── docs/
     └── ARCHITECTURE.md              # this document
 ```
+
+## 4. Module reference
+
+### Core (project root)
+
+- **`models.py`** — `SteamUser`, `SteamApp`, `SteamContext`, `ShortcutsFile`,
+  `CompatTool`. Dependency-free dataclasses that cross every layer.
