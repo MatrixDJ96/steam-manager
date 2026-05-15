@@ -54,6 +54,7 @@ modifies game files or `appmanifest_*.acf`.
 │   │   ├── shortcuts_vdf.py         # binary VDF R/W on shortcuts.vdf
 │   │   ├── policies_toml.py         # user policy file R/W (tomlkit-based)
 │   │   ├── appinfo.py               # binary appinfo.vdf parser
+│   │   ├── scopebuddy.py            # ScopeBuddy observe + stub init
 │   │   ├── compat_tools.py          # discovery of installed compat tools (Proton custom + official)
 ├── tests/
 │   ├── fixtures/                    # synthetic VDF + TOML fixtures
@@ -66,6 +67,7 @@ External paths used at runtime:
 
 ```text
 ~/.config/steam-manager/policies.toml             # user override
+~/.config/scopebuddy/games/steam/<appid>.conf     # ScopeBuddy per-game configs
 ```
 
 ## 4. Module reference
