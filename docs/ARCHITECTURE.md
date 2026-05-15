@@ -46,6 +46,7 @@ modifies game files or `appmanifest_*.acf`.
 │   ├── models.py                    # SteamUser, SteamApp, SteamContext, ShortcutsFile, CompatTool
 │   ├── policy.py                    # policies.toml merge engine + per-AppID resolve
 │   ├── safety.py                    # steam_running() pid-file probe
+│   ├── render.py                    # Rich tables, panels, prompts, OSC 8 link helper
 │   ├── policies.toml                # factory policy (bundled with package)
 │   ├── io/                          # filesystem I/O — no Typer, no Rich
 │   │   ├── __init__.py

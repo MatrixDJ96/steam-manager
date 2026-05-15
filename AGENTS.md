@@ -13,6 +13,8 @@ pull requests to `main`. `scripts/build.sh` activates `.venv` unless a venv is a
 
 ## Layout
 
+- `src/steam_manager/{models,policy,safety,render}.py` — shared dataclasses, the policy merge
+  engine, the Steam pid probe, the shared Rich tables, messages and questionary prompts.
 - `src/steam_manager/policies.toml` — the factory policy, bundled as package data.
 - `tests/conftest.py` — the `fake_steam` fixture, a synthetic Steam tree under `tmp_path`.
 
