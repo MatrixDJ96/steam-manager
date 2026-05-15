@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "steam-manager"
+version = "0.1.0"
+description = "CLI to audit and apply policies on a local Steam library"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Mattia Rombi" }]
+dependencies = [
+    "typer >= 0.12",
+    "rich >= 13",
+    "rich-click >= 1.7",
+    "vdf >= 3.4",
+    "questionary >= 2.0",
+    "tomlkit >= 0.13",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest >= 8",
+    "pytest-cov",
+]
+build = [
+    "pyinstaller >= 6.0",
+]
+
+[project.scripts]
+steam-manager = "steam_manager.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/steam_manager"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"
+
+[tool.coverage.run]
+source = ["steam_manager"]
+
+[tool.coverage.report]
+show_missing = true
