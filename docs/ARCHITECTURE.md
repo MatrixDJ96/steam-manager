@@ -14,6 +14,8 @@ modifies game files or `appmanifest_*.acf`.
 ### Goals
 
 - Discover installed games across every registered Steam library folder.
+- Read and write the per-app compatibility tool (`config.vdf`).
+- Read and write per-user launch options (`localconfig.vdf`).
 
 ### Non-goals
 
@@ -41,6 +43,8 @@ modifies game files or `appmanifest_*.acf`.
 │   │   ├── __init__.py
 │   │   ├── _vdf_util.py             # ci_get() — case-insensitive VDF lookups
 │   │   ├── discovery.py             # libraryfolders, loginusers, appmanifest_*.acf
+│   │   ├── config_vdf.py            # compat-tool R/W on config.vdf
+│   │   ├── localconfig_vdf.py       # launch-options R/W on localconfig.vdf
 ├── tests/
 │   ├── fixtures/                    # synthetic VDF + TOML fixtures
 │   ├── conftest.py                  # fake_steam fixture
@@ -60,3 +64,7 @@ modifies game files or `appmanifest_*.acf`.
 - **`discovery.py`** — `discover(steam_root)`, `list_users(ctx)`,
   `list_apps(ctx)`, `library_label(ctx, path)`. Parses `libraryfolders.vdf`,
   `loginusers.vdf`, `appmanifest_*.acf`.
+- **`config_vdf.py`** — `get_compat_tool`, `set_compat_tool`,
+  `clear_all_compat`. Writes `~/.local/share/Steam/config/config.vdf`.
+- **`localconfig_vdf.py`** — `get_launch_options`, `set_launch_options`,
+  `clear_all_launch_options`. Per-user `localconfig.vdf`.
