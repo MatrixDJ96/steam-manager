@@ -82,6 +82,9 @@ modifies game files or `appmanifest_*.acf`.
 │       ├── _drift.py                # compute_drift() used by list/diff/apply
 │       ├── _restore_diff.py         # compute_restore_diff() — archive-vs-live preview
 │       ├── _targets.py              # --user/--all-users resolution + banner
+│       ├── _wizard_core.py          # pure, render-free config core (Change model, load_state, reducers, apply)
+│       ├── _wizard.py               # classic questionary `config --classic` flow (drives _wizard_core)
+│       │   ├── app.py               #   ConfigApp on _wizard_core: one-screen editor + async drift
 │       ├── _list_render.py          # render_app_groups() — list's Games/Applications panels
 │       ├── list_cmd.py              # `list` — game inventory with compat tool + per-user launch options
 │       ├── diff_cmd.py              # `diff` — preview policy drift (read-only; exit 1 if drift)
@@ -91,6 +94,7 @@ modifies game files or `appmanifest_*.acf`.
 │       ├── backup_cmd.py            # `backup` — manually create a full checkpoint archive
 │       ├── restore_cmd.py           # `restore` — interactive restore from a previous checkpoint
 │       ├── update_cmd.py            # `update` — self-update binary from GitHub releases
+│       ├── config_cmd.py            # `config` sub-typer (get/set/unset/path/wizard); bare/wizard delegate to _config_entry
 │       └── shortcuts_cmd.py         # `shortcuts` sub-typer for the binary shortcuts.vdf of non-Steam games (path/show/edit)
 ├── tests/
 │   ├── fixtures/                    # synthetic VDF + TOML fixtures
@@ -120,6 +124,14 @@ External paths used at runtime:
   pure logic with no project imports.
 - **`safety.py`** — `steam_running() -> int | None`. Probes
   `~/.steam/steam.pid`.
+- **`render.py`** — Rich-based: `_make_inner_table`, `_panel`,
+  `simple_table_str`, `diff_table_str`, `link_cell` (OSC 8), `success`/
+  `warning`/`error`/`info`, `menu` / `multiselect` (+ the `BACK` sentinel —
+  the uniform back-navigable single- and multi-select used by the wizard; Esc
+  yields `BACK`, and `menu` also appends a Back/Exit entry), `dim` (styled
+  secondary-text fragment, e.g. a dimmed AppID), `select_one_interactive`,
+  `select_apps_interactive`, `effective_max_width`. Uses ANSI named colors
+  only, so the terminal theme controls the actual rendering.
 
 ### `io/` — filesystem reads/writes
 
@@ -144,6 +156,16 @@ section lookups go through `io/_vdf_util.ci_get()`.
 - **`appinfo.py`** — `parse(path) -> dict[str, str]`. Custom parser for
   Steam's binary `appinfo.vdf` cache (v29 indexed format + legacy fallback).
   Returns `{}` on parse error so callers can fall back gracefully.
+- **`compat_tools.py`** — `list_compat_tools(ctx) -> list[CompatTool]`.
+  Discovers Proton/GE-Proton/etc. from two sources: custom tools (one
+  `compatibilitytool.vdf` each) found across every `compatibilitytools.d/`
+  Steam scans — the per-install `<steam_root>/compatibilitytools.d/` plus the
+  system-wide `/usr/share/steam` and `/usr/local/share/steam` dirs where
+  distro packages land (Arch/CachyOS `proton-cachyos`), with the per-install
+  root shadowing same-named system entries — and `appmanifest_*.acf` filtered
+  by `name.startswith("Proton")` (official Proton builds Steam installs as
+  apps). The system dirs are overridable via `STEAM_MANAGER_COMPAT_DIRS`. Used
+  by the `config wizard` picker so the user never types a tech_name by hand.
 - **`github_releases.py`** — GitHub Releases API discovery for self-update:
   stdlib `urllib.request` + `json` only, returns plain dataclasses for the
   CLI layer to render. Used by `update` and the passive update notifier.
@@ -155,6 +177,12 @@ section lookups go through `io/_vdf_util.ci_get()`.
 
 Shared CLI helpers (private to the cli/ layer):
 
+- **`_common.py`** — `ExitCode`, `USER_POLICY_PATH`, `steam_root()`,
+  `discover_steam()`, `policy_paths()`, `backup_root()`, `scb_dir()`,
+  `config_ui_mode()`, `scb_ui_mode()`, `iso_timestamp()`,
+  `update_state_path()`. Honors the `STEAM_MANAGER_*` env-var overrides used
+  by tests. `discover_steam()` is how every command that reads Steam, except
+  `config`, finds it: a missing root prints one error line and exits 3.
 - **`_rich.py`** — `install_rich_click(app)`: the monkey-patch chain that
   rewires Click to rich-click with aligned `--help` columns. Called by
   `main()` exactly once before dispatch.
@@ -187,6 +215,11 @@ Shared CLI helpers (private to the cli/ layer):
   target_users, drift_appids)`: the Games/Applications panels `list` prints.
   Keeps `list_cmd` a thin orchestrator; grouping mirrors
   `policy.section_for_type`.
+
+The `config` editor is a **shared pure core with two front-ends**:
+
+- **`_wizard.py`** — the classic questionary flow (`--classic`), also driving
+  `_wizard_core`.
 
 ## 5. Backup format
 

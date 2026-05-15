@@ -22,6 +22,10 @@ config helpers.
 
 - It is **not** a Steam client. It does not launch games, does not
   authenticate, does not talk to Steam's web services.
+- It does **not** resolve or validate Proton names — the `compat_tool` value
+  is written to Steam verbatim, and Steam silently ignores a name it doesn't
+  recognize. Use the *tech name* (e.g. `proton-cachyos-slr`), not the display
+  name; the `config` editor picks the right one for you.
 - It does **not** modify game files, save data, or `appmanifest_*.acf`.
   Manifests are parsed read-only.
 - It is **not** a Pyroveil manager. Per-game shader/runtime hacks in
