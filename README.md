@@ -23,6 +23,23 @@ config helpers.
 - It is **not** a Pyroveil manager. Per-game shader/runtime hacks in
   `~/.pyroveil/` are out of scope.
 
+## Configuration
+
+A factory `policies.toml` ships with the binary. Your overrides live at
+`~/.config/steam-manager/policies.toml` and are deep-merged on top.
+
+```toml
+[games]
+compat_tool    = "proton-cachyos-slr"
+launch_options = "scopebuddy -- %command%"
+
+[overrides.1495710]
+ignore = true                  # exclude one AppID entirely
+
+[overrides.2183900]
+launch_options = "DXVK_FRAME_RATE=0 scopebuddy -- %command%"
+```
+
 ## Development
 
 ```bash

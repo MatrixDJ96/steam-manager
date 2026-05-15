@@ -44,6 +44,7 @@ modifies game files or `appmanifest_*.acf`.
 │   ├── __init__.py                  # __version__ (paired with pyproject.toml)
 │   ├── __main__.py                  # python -m steam_manager → cli.main()
 │   ├── models.py                    # SteamUser, SteamApp, SteamContext, ShortcutsFile, CompatTool
+│   ├── policy.py                    # policies.toml merge engine + per-AppID resolve
 │   ├── policies.toml                # factory policy (bundled with package)
 │   ├── io/                          # filesystem I/O — no Typer, no Rich
 │   │   ├── __init__.py
@@ -79,6 +80,10 @@ External paths used at runtime:
 
 - **`models.py`** — `SteamUser`, `SteamApp`, `SteamContext`, `ShortcutsFile`,
   `CompatTool`. Dependency-free dataclasses that cross every layer.
+- **`policy.py`** — `Policy`, `PolicyEngine`, `load(paths)`,
+  `section_for_type(app_type)`, `resolve(engine, appid, app_type)`. The
+  deep-merge engine: `load` reads the TOML files with `tomllib`, the rest is
+  pure logic with no project imports.
 
 ### `io/` — filesystem reads/writes
 
