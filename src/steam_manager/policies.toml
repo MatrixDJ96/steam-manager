@@ -1,0 +1,16 @@
+[general]
+max_backups = 10
+target_users = ["active"]
+
+[games]
+compat_tool    = "Proton-CachyOS Latest"
+launch_options = "scopebuddy -- %command%"
+
+[applications]
+# compat_tool    = "Proton-CachyOS Latest"
+# launch_options = "scopebuddy -- %command%"
+
+# [overrides.<appid>]
+# ignore = true
+# compat_tool = "..."
+# launch_options = "..."
