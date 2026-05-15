@@ -11,6 +11,10 @@ modifies game files or `appmanifest_*.acf`.
 
 ## 2. Goals and non-goals
 
+### Goals
+
+- Discover installed games across every registered Steam library folder.
+
 ### Non-goals
 
 - Not a Steam client. Does not launch games, does not authenticate, does not
@@ -33,6 +37,13 @@ modifies game files or `appmanifest_*.acf`.
 │   ├── __init__.py                  # __version__ (paired with pyproject.toml)
 │   ├── __main__.py                  # python -m steam_manager → cli.main()
 │   ├── models.py                    # SteamUser, SteamApp, SteamContext, ShortcutsFile, CompatTool
+│   ├── io/                          # filesystem I/O — no Typer, no Rich
+│   │   ├── __init__.py
+│   │   ├── _vdf_util.py             # ci_get() — case-insensitive VDF lookups
+│   │   ├── discovery.py             # libraryfolders, loginusers, appmanifest_*.acf
+├── tests/
+│   ├── fixtures/                    # synthetic VDF + TOML fixtures
+│   ├── conftest.py                  # fake_steam fixture
 └── docs/
     └── ARCHITECTURE.md              # this document
 ```
@@ -43,3 +54,9 @@ modifies game files or `appmanifest_*.acf`.
 
 - **`models.py`** — `SteamUser`, `SteamApp`, `SteamContext`, `ShortcutsFile`,
   `CompatTool`. Dependency-free dataclasses that cross every layer.
+
+### `io/` — filesystem reads/writes
+
+- **`discovery.py`** — `discover(steam_root)`, `list_users(ctx)`,
+  `list_apps(ctx)`, `library_label(ctx, path)`. Parses `libraryfolders.vdf`,
+  `loginusers.vdf`, `appmanifest_*.acf`.

@@ -1,0 +1,20 @@
+"libraryfolders"
+{
+    "0"
+    {
+        "path"  "/tmp/fake-steam"
+        "apps"
+        {
+            "111"  "1000"
+            "222"  "2000"
+        }
+    }
+    "1"
+    {
+        "path"  "/tmp/fake-steam-disk2"
+        "apps"
+        {
+            "333"  "3000"
+        }
+    }
+}

@@ -8,6 +8,10 @@ A command-line tool to audit and batch-apply policies (Proton compat tool,
 launch options) on a local Steam library, with atomic backups and ScopeBuddy
 config helpers.
 
+## What it does
+
+- Discovers every installed game across all Steam library folders.
+
 ## What it does NOT do
 
 - It is **not** a Steam client. It does not launch games, does not

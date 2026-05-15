@@ -1,0 +1,5 @@
+[general]
+max_backups = 50
+
+[overrides.2183900]
+launch_options = "DXVK_FRAME_RATE=0 scopebuddy -- %command%"
