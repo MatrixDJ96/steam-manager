@@ -56,6 +56,7 @@ modifies game files or `appmanifest_*.acf`.
 │   │   ├── appinfo.py               # binary appinfo.vdf parser
 │   │   ├── scopebuddy.py            # ScopeBuddy observe + stub init
 │   │   ├── compat_tools.py          # discovery of installed compat tools (Proton custom + official)
+│   │   ├── github_releases.py       # GitHub Releases API discovery (self-update)
 │   │   └── backups.py               # atomic .tar.gz checkpoints
 ├── tests/
 │   ├── fixtures/                    # synthetic VDF + TOML fixtures
