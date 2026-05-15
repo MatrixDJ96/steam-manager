@@ -6,6 +6,11 @@ the [README](../README.md).
 
 ## 1. Overview
 
+`steam-manager` is a command-line tool that brings declarative configuration
+to a local Steam install on Linux. It scans every Steam library folder on the
+machine, reads the Steam VDF configuration files, and reconciles the current
+state with a policy described in `policies.toml`.
+
 The tool never talks to Steam's servers, never launches games, and never
 modifies game files or `appmanifest_*.acf`.
 
@@ -71,7 +76,12 @@ modifies game files or `appmanifest_*.acf`.
 │       ├── _steam_guard.py          # check_steam_closed() refuses writes while alive
 │       ├── _appinfo.py              # appinfo_types (lru_cache per root) + is_listable filter
 │       ├── _update_check.py         # passive newer-release notifier (24h cache, stderr)
+│       ├── _drift.py                # compute_drift() used by list/diff/apply
 │       ├── _targets.py              # --user/--all-users resolution + banner
+│       ├── _list_render.py          # render_app_groups() — list's Games/Applications panels
+│       ├── list_cmd.py              # `list` — game inventory with compat tool + per-user launch options
+│       ├── diff_cmd.py              # `diff` — preview policy drift (read-only; exit 1 if drift)
+│       ├── apply_cmd.py             # `apply` — write policy drift to disk (auto-backup, no dry-run)
 ├── tests/
 │   ├── fixtures/                    # synthetic VDF + TOML fixtures
 │   ├── conftest.py                  # fake_steam fixture
@@ -148,9 +158,17 @@ Shared CLI helpers (private to the cli/ layer):
 - **`_appinfo.py`** — `appinfo_types()` (cached per Steam root through an
   `@lru_cache` helper), `is_listable`, `NON_GAME_NAME_PREFIXES`. The "what
   counts as a game" filter shared by list/diff/apply/scopebuddy.
+- **`_drift.py`** — `compute_drift(ctx, apps, users, engine, target_spec)`:
+  the diff between on-disk state and resolved policy. Used by `list` (to
+  mark drifting rows bold), `diff` (read-only preview), and `apply` (which
+  writes the drift away).
 - **`_targets.py`** — `effective_target_spec`, `resolve_target_users`,
   `target_users_banner`: turn `--user`/`--all-users` flags into a concrete
   user list and a Rich-markup banner.
+- **`_list_render.py`** — `render_app_groups(console, ctx, listable, types,
+  target_users, drift_appids)`: the Games/Applications panels `list` prints.
+  Keeps `list_cmd` a thin orchestrator; grouping mirrors
+  `policy.section_for_type`.
 
 ## 5. Backup format
 
