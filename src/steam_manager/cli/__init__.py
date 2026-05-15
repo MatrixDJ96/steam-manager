@@ -1,0 +1,79 @@
+"""CLI entry point: assembles the Typer `app` and exposes `main()`.
+
+Layout follows the pip/pipx convention: each top-level command lives in its
+own `<verb>_cmd.py` module (list, diff, apply, clear, open, backup, restore,
+update) and each sub-typer family lives in `<name>_cmd.py` (config,
+shortcuts, scopebuddy).
+Every command registers itself via the `@app.command()` decorator at import
+time; this module imports each module purely for that side effect.
+
+Dependency rules (see docs/ARCHITECTURE.md §7):
+- cli/ imports from io/, policy, safety, render, models — never the reverse
+- io/ is import-free of CLI concerns
+- _helpers (cli/_*.py) may import each other; *_cmd.py modules import them
+"""
+from __future__ import annotations
+
+from steam_manager.cli._common import (  # re-exports for callers/tests
+    ExitCode,
+    USER_POLICY_PATH,
+    backup_root,
+    iso_timestamp,
+    policy_paths,
+    steam_root,
+    update_state_path,
+)
+from steam_manager.cli._rich import install_rich_click
+from steam_manager.cli.app import app
+
+
+# --- Register top-level commands by importing their modules -----------------
+#
+# Each *_cmd module's @app.command() decorator runs at import time, attaching
+# the command to `app`. Alphabetical order for readability; dispatch doesn't
+# care.
+from steam_manager.cli import (  # noqa: E402, F401  side-effect imports
+    apply_cmd,
+    backup_cmd,
+    clear_cmd,
+    diff_cmd,
+    list_cmd,
+    open_cmd,
+    restore_cmd,
+    update_cmd,
+)
+
+# --- Register sub-typer families -------------------------------------------
+from steam_manager.cli.config_cmd import config_app  # noqa: E402
+from steam_manager.cli.scopebuddy_cmd import scopebuddy_app  # noqa: E402
+from steam_manager.cli.shortcuts_cmd import shortcuts_app  # noqa: E402
+
+app.add_typer(config_app, name="config")
+app.add_typer(scopebuddy_app, name="scopebuddy")
+app.add_typer(shortcuts_app, name="shortcuts")
+
+# Short hidden aliases (functional, omitted from `--help`).
+app.add_typer(scopebuddy_app, name="scb", hidden=True)
+app.add_typer(shortcuts_app, name="sct", hidden=True)
+
+
+def main() -> None:
+    """Entry point. Installs rich-click formatting then dispatches the CLI.
+
+    A `result_callback` runs the passive update notifier after a command
+    returns; Click skips it when the command ends in `typer.Exit` (any code)
+    or raises. Skipping on an uncaught exception is desired: don't spam a
+    notifier when the user has a real problem.
+    """
+    import sys
+    click_app = install_rich_click(app)
+
+    @click_app.result_callback()
+    def _post_dispatch(result, **kwargs):
+        from steam_manager.cli._update_check import run_post_command_hook
+        # Best-effort: first non-flag arg from argv is the invoked sub-command.
+        invoked = next((a for a in sys.argv[1:] if not a.startswith("-")), None)
+        run_post_command_hook(invoked)
+        return result
+
+    click_app()

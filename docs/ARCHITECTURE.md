@@ -2,7 +2,9 @@
 
 This document covers the architecture and internals. For what the tool does
 and does not do see
-the [README](../README.md).
+the [README](../README.md); for common scenarios see
+[`docs/HOWTO.md`](HOWTO.md); for the full configuration schema, exit codes,
+and operator reference see [`docs/REFERENCE.md`](REFERENCE.md).
 
 ## 1. Overview
 
@@ -27,6 +29,9 @@ modifies game files or `appmanifest_*.acf`.
   destructive operation, with an interactive restore command.
 - Multi-user aware: operate on the active local account, on all local
   accounts, or on an explicit list.
+- ScopeBuddy integration: passively observe whether per-game stubs exist for
+  games that opt into `scopebuddy` via launch options, and generate stubs on
+  demand.
 
 ### Non-goals
 
@@ -41,6 +46,12 @@ modifies game files or `appmanifest_*.acf`.
   enumerate installed apps.
 
 ## 3. Project layout
+
+The source tree is layered into `cli/` (Typer commands) and `io/` (filesystem
+reads/writes), with a thin core of `policy.py`/`safety.py`/`render.py`/
+`models.py` between them. Dependency direction is strictly downward — `cli/`
+imports from `io/`, never the reverse. `tests/test_architecture.py` enforces
+this with AST inspection.
 
 ```text
 <repo>/
@@ -71,6 +82,7 @@ modifies game files or `appmanifest_*.acf`.
 │   │   ├── github_releases.py       # GitHub Releases API discovery (self-update)
 │   │   └── backups.py               # atomic .tar.gz checkpoints
 │   └── cli/                         # Typer entry + each command in its own file
+│       ├── __init__.py              # wires side-effect imports + main()
 │       ├── app.py                   # Typer() singleton + root callback
 │       ├── _common.py               # ExitCode, path helpers, env-var overrides
 │       ├── _rich.py                 # install_rich_click() monkey-patch
@@ -85,9 +97,11 @@ modifies game files or `appmanifest_*.acf`.
 │       ├── _wizard_core.py          # pure, render-free config core (Change model, load_state, reducers, apply)
 │       ├── _wizard.py               # classic questionary `config --classic` flow (drives _wizard_core)
 │       ├── _config_entry.py         # config dispatch: TUI vs classic vs scriptable + non-TTY guard
+│       ├── _scb_core.py             # pure, render-free ScopeBuddy dashboard core (load_rows → ScbRow)
 │       ├── tui/                     # Textual TUI (the only package importing textual)
 │       │   ├── __init__.py          #   run()/run_scb(): lazy entry points of the two Apps
 │       │   ├── app.py               #   ConfigApp on _wizard_core: one-screen editor + async drift
+│       │   ├── scb_app.py           #   ScbApp on _scb_core: ScopeBuddy dashboard (status, init, delete)
 │       │   ├── widgets.py           #   modal screens (game editor, settings hub, pickers, confirm, scb row)
 │       │   └── app.tcss             #   stylesheet (package data)
 │       ├── _list_render.py          # render_app_groups() — list's Games/Applications panels
@@ -100,13 +114,17 @@ modifies game files or `appmanifest_*.acf`.
 │       ├── restore_cmd.py           # `restore` — interactive restore from a previous checkpoint
 │       ├── update_cmd.py            # `update` — self-update binary from GitHub releases
 │       ├── config_cmd.py            # `config` sub-typer (get/set/unset/path/wizard); bare/wizard delegate to _config_entry
+│       ├── scopebuddy_cmd.py        # `scopebuddy` sub-typer: dashboard TUI default + observe/init
 │       └── shortcuts_cmd.py         # `shortcuts` sub-typer for the binary shortcuts.vdf of non-Steam games (path/show/edit)
 ├── tests/
 │   ├── fixtures/                    # synthetic VDF + TOML fixtures
 │   ├── conftest.py                  # fake_steam fixture
 │   ├── tui_helpers.py               # shared helpers for the Textual Pilot suites
+│   ├── test_architecture.py         # AST-based layering invariants
 │   └── test_*.py                    # test modules (Textual Pilot tests marked `tui`)
 └── docs/
+    ├── HOWTO.md                     # cookbook for common scenarios
+    ├── REFERENCE.md                 # operator reference (schema, exit codes, env vars)
     └── ARCHITECTURE.md              # this document
 ```
 
@@ -163,6 +181,12 @@ section lookups go through `io/_vdf_util.ci_get()`.
 - **`appinfo.py`** — `parse(path) -> dict[str, str]`. Custom parser for
   Steam's binary `appinfo.vdf` cache (v29 indexed format + legacy fallback).
   Returns `{}` on parse error so callers can fall back gracefully.
+- **`scopebuddy.py`** — `observe(configs_dir, installed_appids,
+  launch_options)` returns a `ScopeBuddyObservation` with
+  `games_with_scb_launch` / `missing_configs` / `orphan_configs`.
+  `init_stub(target, name, force)` writes a minimal two-line stub.
+  `delete_config(path)` removes one per-game config file (used by the
+  dashboard's orphan delete; propagates `FileNotFoundError`).
 - **`compat_tools.py`** — `list_compat_tools(ctx) -> list[CompatTool]`.
   Discovers Proton/GE-Proton/etc. from two sources: custom tools (one
   `compatibilitytool.vdf` each) found across every `compatibilitytools.d/`
@@ -181,6 +205,12 @@ section lookups go through `io/_vdf_util.ci_get()`.
   `prune_checkpoints(root, limit)`. Atomic via temp file + rename.
 
 ### `cli/` — Typer commands
+
+Each top-level command (`list`, `diff`, `apply`, `clear`, `open`, `backup`,
+`restore`, `update`) lives in its own `<verb>_cmd.py`. Each sub-typer family
+(`config`, `scopebuddy`, `shortcuts`) lives in `<name>_cmd.py`. The Typer app
+singleton is in `cli/app.py`; everything is wired in `cli/__init__.py` via
+side-effect imports.
 
 Shared CLI helpers (private to the cli/ layer):
 
@@ -240,8 +270,30 @@ The `config` editor is a **shared pure core with two front-ends**:
   the scriptable hint and exits 2 (never spins a UI into a dead pipe); a Textual
   startup failure falls through to the same hint. `cli.tui` is imported lazily
   here so non-TUI commands never load Textual.
+- **`tui/`** — the Textual front-end (`ConfigApp` + modal pickers + `app.tcss`),
+  the only package that imports `textual` (enforced by `test_architecture.py`).
+  One screen drives the `_wizard_core` reducers; **Save** calls `apply()` once.
 - **`_wizard.py`** — the classic questionary flow (`--classic`), also driving
   `_wizard_core`.
+
+The `scopebuddy` dashboard mirrors that split with its own pure core and
+Textual front-end:
+
+- **`_scb_core.py`** — the front-end-agnostic core. `load_rows(scb_dir, games,
+  launch_options)` turns the installed games plus their launch options into an
+  ordered list of frozen `ScbRow` values (game rows first by name, then orphan
+  rows), deriving each row's `active`/`missing`/`inactive`/`orphan` status
+  through `io.scopebuddy.observe`. It imports only dataclasses/pathlib,
+  `io.scopebuddy`, and `models` — **no Rich, Typer, Textual, or questionary** —
+  so the classification is unit-testable without a terminal.
+- **`tui/scb_app.py`** — `ScbApp`, the full-screen dashboard the bare
+  `scopebuddy` command launches on an interactive terminal (a second Textual
+  front-end under `tui/`). It drives `_scb_core.load_rows`, reloading the row
+  model after every mutation so the display mirrors disk. `i` bulk-creates
+  missing stubs; the per-row modal (`tui.widgets.ScbRowScreen`) inits a stub,
+  opens the `.conf` in `$EDITOR`, or deletes an orphan config — the delete
+  routes through `_checkpoint.make_checkpoint(trigger="scb-delete")` before
+  `io.scopebuddy.delete_config`.
 
 ## 5. Backup format
 
@@ -253,11 +305,13 @@ manifest.json
 config.vdf                            # system-wide compat config (apply/clear/manual)
 users/<account>/localconfig.vdf       # one per affected user (apply/clear/manual)
 users/<account>/shortcuts.vdf         # shortcuts-edit
+scopebuddy/<stem>.conf                # scb-delete
 ```
 
 `manifest.json` records:
 
 - `created_at` — ISO-8601 local timestamp (naive, no timezone offset).
+- `trigger` — `manual`, `apply`, `clear`, `shortcuts-edit`, or `scb-delete`.
 - `system` — bool, whether `config.vdf` is in the archive.
 - `users` — list of account names whose `localconfig.vdf` or
   `shortcuts.vdf` is in the archive.
@@ -282,3 +336,100 @@ Restore flow (in `cli/restore_cmd.py`):
 4. Otherwise render the diff with `render.diff_table_str()` (same renderer
    as the `diff` command), prompt for confirmation unless `--yes`, then
    extract for real.
+
+The archive layout, retention policy (`[general] max_backups`), and the user
+restore flow are documented in [`docs/REFERENCE.md`](REFERENCE.md#backups).
+
+## 6. Build pipeline
+
+`scripts/build.sh` produces `dist/steam-manager` — a single-file standalone
+Linux x86_64 binary (~20 MB) via PyInstaller `--onefile`. The binary bundles
+the Python runtime and every dependency, including the factory
+`policies.toml`. It requires no Python or pip on the target system, only
+glibc.
+
+Textual imports `platformdirs` at module scope in `textual.app`, which
+PyInstaller follows, so `--hidden-import platformdirs` is only a safeguard;
+the build also keeps `--collect-submodules textual` as one. `textual.widgets`
+loads each widget class through a package `__getattr__` that imports
+`textual.widgets._<snake_name>`, which static analysis cannot follow; the
+package's `TYPE_CHECKING` block names the modules that define the widgets, and
+PyInstaller follows those imports without running them. Measured with
+PyInstaller 6.22.3, pyinstaller-hooks-contrib 2026.7, Textual 8.2.8 and Python
+3.14.7: a build without the flag bundles all 39 of them, and every screen and
+modal of both TUIs runs in it without an import error. It lacks the three
+modules the loader reaches under another name, `_tab`, `_tab_pane` and
+`_markdown_viewer` (for `Tab`, `TabPane` and `MarkdownViewer`), so a TUI that
+imports one of those widgets from `textual.widgets` would fail only in the
+frozen binary without the flag. The flag also covers a Textual release or hook
+set that no longer lists every widget module.
+
+The TUI stylesheet `app.tcss` is package data and rides the wheel via the
+existing `--collect-data steam_manager`. `scripts/build.sh` also
+collects the `rich_click` submodules and declares `vdf`, `questionary` and
+`tomlkit` as hidden imports.
+
+## 7. Testing
+
+The tests under `tests/` are driven by `pytest` with synthetic VDF and TOML
+fixtures. The `fake_steam` fixture in `conftest.py` builds a self-contained
+Steam tree in `tmp_path` so tests never touch the real Steam install.
+
+The Textual Pilot interaction tests (`tests/test_tui.py`,
+`tests/test_tui_journey.py`, `tests/test_scb_tui.py`) carry the `tui` marker
+and need `pytest-asyncio`; they drive the real `ConfigApp` and `ScbApp` via
+`app.run_test()`. `pytest -m 'not tui'` is the fast, Textual-free lane
+(sub-2s); CI runs the full suite. The pure config core (`_wizard_core`) is
+tested directly in `test_wizard_core.py` — no asyncio, no Textual — and the
+dispatch ladder in `test_config_entry.py`.
+
+Tests that need to bypass production paths set env vars honored by
+`cli/_common.py`, `cli/_steam_guard.py` (`STEAM_MANAGER_FORCE`),
+`io/policies_toml.py` (`STEAM_MANAGER_USER_POLICY`) and `io/compat_tools.py`
+(`STEAM_MANAGER_COMPAT_DIRS`):
+
+- `STEAM_MANAGER_STEAM_ROOT` — overrides the discovered Steam root.
+- `STEAM_MANAGER_POLICY_PATHS` — colon-separated list of TOML paths.
+- `STEAM_MANAGER_BACKUP_ROOT` — overrides the backup directory.
+- `STEAM_MANAGER_USER_POLICY` — overrides the user policy file path.
+- `STEAM_MANAGER_SCB_DIR` — overrides the ScopeBuddy configs dir.
+- `STEAM_MANAGER_SCB_UI` — picks the bare `scopebuddy` front-end (`tui`/`observe`).
+- `STEAM_MANAGER_COMPAT_DIRS` — colon-separated system-wide
+  `compatibilitytools.d/` dirs (an autouse fixture sets it empty so real
+  system Proton builds never leak into tests).
+- `STEAM_MANAGER_FORCE=1` — equivalent to passing `--force`.
+- `STEAM_MANAGER_CONFIG_UI` — picks the `config` editor front-end (`tui`/`classic`).
+- `STEAM_MANAGER_UPDATE_STATE` — overrides the update notifier's cache file path.
+
+Commands are exercised through `typer.testing.CliRunner` against `cli.app`.
+Rich output goes to a `StringIO` in tests, which strips ANSI; substring
+assertions on table content work, but assertions on colors/styles do not.
+
+### Architectural tests
+
+`tests/test_architecture.py` uses AST inspection to enforce these dependency
+rules:
+
+- `io/*.py` may not import from `cli/`, `render`, `policy`, `safety`
+- `policy.py` may not import from `cli/`, `io/`, `render`
+- `render.py` must not import any project module (only `models`, optional)
+- `safety.py` may not import from `cli/`, `io/`, `render`, `policy`
+- `models.py` must not import any project module
+- `cli/` must consume `io/` only through its public (non-`_`) API;
+  `io/_vdf_util` is the one private module it may import
+- `cli/_wizard_core.py` stays render-free: none of `_drift`/`_targets`/
+  `render`/questionary/textual (the shared edit core works without a terminal)
+- `cli/_scb_core.py` stays render-free on the same rule: none of `render`/
+  `_drift`/`_targets`/questionary/textual (the ScopeBuddy dashboard core works
+  without a terminal)
+- `textual` may be imported **only** under `cli/tui/`, and nothing outside
+  `cli/tui/` may import `cli.tui` at module scope (so non-TUI commands never
+  load Textual at startup)
+
+Sibling helpers in `cli/_*.py` may import each other freely; only the
+boundaries above are enforced.
+
+A future refactor that accidentally introduces a layer-crossing import
+(e.g. `io/scopebuddy.py` reaching for `render.error` "for convenience")
+fails this test — a much cleaner signal than chasing the resulting runtime
+error.

@@ -8,13 +8,100 @@ A command-line tool to audit and batch-apply policies (Proton compat tool,
 launch options) on a local Steam library, with atomic backups and ScopeBuddy
 config helpers.
 
+Set one Proton version and one launch-options string across your **entire**
+library in a single command, with per-AppID exceptions and an automatic
+safety checkpoint before every write. Doing the same through the Steam UI
+takes one right-click per game.
+
+## Demo
+
+```text
+$ steam-manager diff
+ⓘ Target users: user:matrixdj96 (active)
+╭─ Compat tool ────────────────────────────────────────────────────────────────╮
+│      AppID    Name            From         To                                │
+│        222    Game Two        <none>       proton-cachyos-slr                │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ Launch options ─────────────────────────────────────────────────────────────╮
+│      AppID    Name            From         To                                │
+│        222    Game Two        <none>       scopebuddy -- %command%           │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+ⓘ 2 changes planned. Run `steam-manager apply` to apply.
+```
+
+`diff` is read-only. `apply` writes the changes after taking a `.tar.gz`
+checkpoint. On a real terminal the From column renders red and the To column
+green.
+
+## Usage
+
+### First run
+
+```bash
+steam-manager config           # interactive editor (TUI): pick Proton, set defaults, etc.
+steam-manager diff             # preview what would change (read-only)
+steam-manager apply            # commit the changes (auto-backup first)
+```
+
+### Day-to-day
+
+```bash
+steam-manager list             # what is installed and how it is configured now
+steam-manager diff             # what `apply` would change
+steam-manager apply            # apply the policy
+```
+
+### Tweak the policy
+
+```bash
+steam-manager config                                   # full-screen TUI (default; --classic for prompts)
+steam-manager config get games.compat_tool             # read a value (scriptable)
+steam-manager config set games.compat_tool "proton_experimental"  # set a value (scriptable)
+steam-manager config unset overrides.1495710.ignore    # remove a key (scriptable)
+```
+
+### Backups
+
+```bash
+steam-manager backup           # manual checkpoint
+steam-manager restore --last   # roll back to the most recent
+steam-manager restore          # interactive picker
+```
+
+### ScopeBuddy helpers
+
+```bash
+steam-manager scopebuddy         # dashboard TUI on a terminal (alias: scb)
+steam-manager scopebuddy observe # scriptable missing/orphan report
+steam-manager scopebuddy init    # generate missing stubs
+```
+
+### Non-Steam shortcuts
+
+```bash
+steam-manager shortcuts show   # print the binary shortcuts.vdf as JSON
+steam-manager shortcuts edit   # round-trip via JSON in $EDITOR (safe re-encode)
+```
+
+For per-scenario recipes (per-AppID exceptions, multi-user setups, scripting
+patterns) see `docs/HOWTO.md`. For the complete schema, flags, and exit codes
+see `docs/REFERENCE.md`. Both are linked from the docs map below.
+
 ## What it does
 
 - Discovers every installed game across all Steam library folders.
+- Reads and writes the per-app Proton compatibility tool (`config.vdf`).
+- Reads and writes per-user launch options (`localconfig.vdf`).
 - Expresses the desired state declaratively in `policies.toml`, with per
   app-type sections and per-AppID overrides.
-- Takes an atomic `.tar.gz` checkpoint before every `apply`, `clear`, and
-  `shortcuts edit`, with an interactive restore command.
+- Takes an atomic `.tar.gz` checkpoint before every `apply`, `clear`,
+  `shortcuts edit`, and ScopeBuddy dashboard orphan delete, with an
+  interactive restore command.
+- Operates on the active local account, on a specific account, or on all
+  local accounts.
+- Observes ScopeBuddy per-game stubs, generates them on demand, and manages
+  them from a full-screen dashboard.
 - Edits Steam's binary `shortcuts.vdf` (non-Steam games) via a JSON
   round-trip in `$EDITOR`, preserving int32/string typing.
 
@@ -36,6 +123,21 @@ config helpers.
 A factory `policies.toml` ships with the binary. Your overrides live at
 `~/.config/steam-manager/policies.toml` and are deep-merged on top.
 
+Three ways to edit them:
+
+- `steam-manager config` — a full-screen **Textual TUI**: the whole policy on
+  one screen (defaults, a filterable games table, targets, a live Pending pane).
+  It lists the Proton builds actually installed on your system, so you never
+  type a tech name by hand. **Save** writes only `policies.toml`; run
+  `steam-manager apply` to push it onto Steam. Prefer step-by-step prompts?
+  `steam-manager config --classic`. (Over a pipe / non-interactive it prints
+  the scriptable hint instead of opening a UI.)
+- `steam-manager config set games.compat_tool "proton_experimental"` —
+  script-friendly primitives (`get` / `set` / `unset` over dotted keys).
+- `$EDITOR $(steam-manager config path)` — edit the raw TOML by hand.
+
+Minimal example:
+
 ```toml
 [games]
 compat_tool    = "proton-cachyos-slr"
@@ -48,11 +150,18 @@ ignore = true                  # exclude one AppID entirely
 launch_options = "DXVK_FRAME_RATE=0 scopebuddy -- %command%"
 ```
 
+The full schema, per-user filters, exit codes, and environment variables are
+documented in `docs/REFERENCE.md`.
+
 ## Safety
 
 - **Steam must be closed** while you `apply`, `restore`, `clear`, or
   `shortcuts edit`. The tool detects a running Steam via
   `~/.steam/steam.pid` and refuses to run. Use `--force` to override.
+- `apply`, `clear`, `shortcuts edit`, and the ScopeBuddy dashboard's orphan
+  delete write a `.tar.gz` checkpoint to
+  `~/.local/state/steam-manager/backups/` **before** touching anything —
+  there is no opt-out. Restore with `steam-manager restore`.
 
 ## Development
 
@@ -62,15 +171,18 @@ pip install -e ".[dev]"
 pytest                         # hermetic suite (-m "not tui" skips the Textual Pilot tests)
 ```
 
-Internals are documented in `docs/ARCHITECTURE.md`; build commands and
-conventions for contributors and coding agents are in `AGENTS.md`.
+Architecture, module APIs, and the build pipeline are documented in
+`docs/ARCHITECTURE.md`; build commands, conventions, and gotchas for
+contributors and coding agents are in `AGENTS.md`.
 
 ## Docs map
 
 | Document                                          | Audience                  | Contents                                                       |
 |---------------------------------------------------|---------------------------|----------------------------------------------------------------|
 | [README](README.md)                               | Everyone                  | What it is / is not.                                           |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)      | Contributor               | Internals.                                                     |
+| [docs/HOWTO.md](docs/HOWTO.md)                    | Operator                  | Cookbook recipes for common scenarios.                         |
+| [docs/REFERENCE.md](docs/REFERENCE.md)            | Operator, scripter        | Full configuration schema, exit codes, env vars, terminal compat. |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)      | Contributor               | Internals: module reference, backup format, build pipeline.    |
 | [AGENTS.md](AGENTS.md)                            | Contributor, all agents   | Build commands, conventions, gotchas.                          |
 
 ## License
