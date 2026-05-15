@@ -1,0 +1,12 @@
+[general]
+max_backups = 20
+target_users = ["active"]
+
+[games]
+compat_tool    = "Proton-CachyOS Latest"
+launch_options = "scopebuddy -- %command%"
+
+[applications]
+
+[overrides.1495710]
+ignore = true

@@ -1,0 +1,27 @@
+"InstallConfigStore"
+{
+    "Software"
+    {
+        "Valve"
+        {
+            "Steam"
+            {
+                "CompatToolMapping"
+                {
+                    "0"
+                    {
+                        "name"      ""
+                        "config"    ""
+                        "priority"  "0"
+                    }
+                    "111"
+                    {
+                        "name"      "Proton-CachyOS Latest"
+                        "config"    ""
+                        "priority"  "250"
+                    }
+                }
+            }
+        }
+    }
+}
