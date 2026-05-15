@@ -50,6 +50,7 @@ modifies game files or `appmanifest_*.acf`.
 │   │   ├── localconfig_vdf.py       # launch-options R/W on localconfig.vdf
 │   │   ├── shortcuts_vdf.py         # binary VDF R/W on shortcuts.vdf
 │   │   ├── policies_toml.py         # user policy file R/W (tomlkit-based)
+│   │   ├── appinfo.py               # binary appinfo.vdf parser
 ├── tests/
 │   ├── fixtures/                    # synthetic VDF + TOML fixtures
 │   ├── conftest.py                  # fake_steam fixture
@@ -84,3 +85,6 @@ External paths used at runtime:
 - **`policies_toml.py`** — `user_path`, `load_doc`, `save_doc`,
   `validate_toml`, `get_dotted`/`set_dotted`/`unset_dotted`,
   `render_effective_doc`. `tomlkit`-based to preserve user comments.
+- **`appinfo.py`** — `parse(path) -> dict[str, str]`. Custom parser for
+  Steam's binary `appinfo.vdf` cache (v29 indexed format + legacy fallback).
+  Returns `{}` on parse error so callers can fall back gracefully.
