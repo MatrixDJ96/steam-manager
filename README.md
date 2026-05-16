@@ -59,9 +59,12 @@ installer prints the line to add to your shell profile.
 ### Pin a specific version
 
 ```bash
-STEAM_MANAGER_VERSION=v0.0.1 \
-    curl -fsSL https://raw.githubusercontent.com/MatrixDJ96/steam-manager/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/MatrixDJ96/steam-manager/main/scripts/install.sh \
+    | STEAM_MANAGER_VERSION=v0.0.1 bash
 ```
+
+The variable goes **before `bash`**, not before `curl` — the installer is the
+bash subprocess, and a prefix on `curl` would only enter `curl`'s environment.
 
 ## Usage
 

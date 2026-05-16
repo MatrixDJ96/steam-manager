@@ -226,13 +226,19 @@ missing.
 ## Pin to a specific release when installing on a new machine
 
 ```bash
-STEAM_MANAGER_VERSION=v0.1.0 \
-    curl -fsSL https://raw.githubusercontent.com/MatrixDJ96/steam-manager/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/MatrixDJ96/steam-manager/main/scripts/install.sh \
+    | STEAM_MANAGER_VERSION=v0.1.0 bash
 ```
 
 Useful in `Dockerfile`s and provisioning scripts where you want a
 reproducible install. The installer downloads `steam-manager.sha256`
 alongside the binary and verifies the checksum before placing the file.
+
+Note the prefix is on **`bash`**, not on `curl`. In a pipeline the two
+processes are forked independently and a `VAR=value curl ... | bash` only
+sets `VAR` in `curl`'s environment, which the installer never sees — it
+silently falls back to `latest`. If you prefer, `export STEAM_MANAGER_VERSION=v0.1.0`
+once and then pipe normally works too.
 
 ## Install into a non-standard directory
 
