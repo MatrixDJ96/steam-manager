@@ -145,8 +145,10 @@ Commands are exercised through `typer.testing.CliRunner` against `cli.app`. Rich
 
 ```bash
 ./scripts/build.sh                                                            # produces dist/steam-manager + dist/steam-manager.sha256
-gh release create vX.Y.Z --notes "..." dist/steam-manager dist/steam-manager.sha256
+./scripts/release.sh vX.Y.Z --notes-file notes.md                             # appends pinned Install section, then `gh release create`
 ```
+
+`release.sh` exists because the install instructions on a release page must point at *that* release, not at `latest`. The script reads your changelog body from `--notes-file` (or stdin), appends a `## Install` section with `STEAM_MANAGER_VERSION=vX.Y.Z bash` hard-coded, then calls `gh release create` with the binary + sha256 attached. The supplied notes must **not** contain their own `## Install` heading — the script owns it and refuses with an error if one is present. Optional flags: `--title "..."` (default: the tag) and `--draft`.
 
 Both assets must be uploaded — `scripts/install.sh` downloads the `.sha256` next to the binary and verifies it before placing the file. CI on `main` is wired through `.github/workflows/ci.yml`.
 
