@@ -75,6 +75,8 @@ pull requests to `main`. `scripts/build.sh` activates `.venv` unless a venv is a
   a scratch tree, or stay on `list`, `diff` and `scopebuddy observe`.
 - `config set`, `config unset` and the `config` editor's save and reset write or delete the
   user policy: without the owner's go, point `STEAM_MANAGER_USER_POLICY` at a scratch file.
+- `scripts/release.sh` publishes a GitHub release that `scripts/install.sh` serves as the
+  latest: it needs the owner's go; `--draft` creates it unpublished.
 
 ## Docs
 

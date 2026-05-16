@@ -61,6 +61,7 @@ this with AST inspection.
 ├── scripts/
 │   ├── build.sh                     # PyInstaller --onefile build (emits SHA256)
 │   ├── install.sh                   # one-line installer with version pin + SHA256 verify
+│   ├── release.sh                   # GitHub release publisher (pinned Install section)
 ├── src/steam_manager/
 │   ├── __init__.py                  # __version__ (paired with pyproject.toml)
 │   ├── __main__.py                  # python -m steam_manager → cli.main()
@@ -375,6 +376,15 @@ collects the `rich_click` submodules and declares `vdf`, `questionary` and
 It downloads the latest GitHub release asset into `~/.local/bin/` (override
 with `STEAM_MANAGER_INSTALL_DIR`), runs a smoke test (`--version`), and warns
 if the install dir is not on `PATH`.
+
+`scripts/release.sh` is the publisher. It reads release notes from
+`--notes-file` (or stdin), appends a `## Install` section pinned to the tag
+(`STEAM_MANAGER_VERSION=vX.Y.Z bash`), and calls `gh release create` with
+the binary + `.sha256` attached. The pinned section exists so that
+copy-pasting the install command from an older release page installs *that*
+release, not whatever `latest` resolves to weeks later. The script refuses
+if the supplied notes already contain an `## Install` heading — it owns
+that section.
 
 ## 7. Testing
 
