@@ -8,7 +8,6 @@ The package is split into layers (see CLAUDE.md "Architecture"):
   render  can import: nothing from the project (pure Rich)
   safety  can import: nothing from the project (pure stdlib)
   models  can import: nothing from the project (pure stdlib)
-  steam   shim re-export — allowed to import from io/ + models
 
 If you intentionally need to relax these rules (e.g. you decide
 render.py can import models, which is fine), update this test along
@@ -94,13 +93,12 @@ def test_render_has_no_project_deps():
     )
 
 
-# --- safety.py only depends on io.backups (re-export shim) -----------------
+# --- safety.py only does the pid-file probe --------------------------------
 
 def test_safety_minimal_deps():
-    """safety.py: steam_running() plus a backwards-compat re-export of
-    io.backups.* . No CLI, no render, no policy."""
+    """safety.py: steam_running() only. No CLI, no render, no policy, no io."""
     imports = _project_imports(SRC / "safety.py")
-    bad = imports & {"cli", "render", "policy"}
+    bad = imports & {"cli", "render", "policy", "io"}
     assert not bad, f"safety.py reached into forbidden modules: {bad}"
 
 
@@ -110,3 +108,39 @@ def test_models_is_dependency_free():
     """models.py: dataclasses only. No project imports."""
     imports = _project_imports(SRC / "models.py")
     assert imports == set(), f"models.py must not import anything project-level: {imports}"
+
+
+# --- cli/ may not reach underscore-private names from io/ -------------------
+
+def _project_from_imports(file_path: Path) -> list[tuple[str, str]]:
+    """Return list of (module, name) for every `from steam_manager.X import Y`
+    in `file_path`. Catches private-leak imports like
+    `from steam_manager.io.config_vdf import _load_compat_map`."""
+    tree = ast.parse(file_path.read_text())
+    out: list[tuple[str, str]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            if node.module.startswith("steam_manager"):
+                for alias in node.names:
+                    out.append((node.module, alias.name))
+    return out
+
+
+def test_cli_does_not_import_io_privates():
+    """cli/ must consume io/ only through its public API. Reaching for a
+    `_`-prefixed io/ name signals a leaked private (the original
+    `steam._load_compat_map` smell that the audit caught) and a layering
+    boundary worth re-stating instead of papering over."""
+    allowed_private = {"_vdf_util"}  # the only documented `_`-name in io/
+    violations: list[tuple[str, str, str]] = []
+    for f in _glob_layer("cli"):
+        for module, name in _project_from_imports(f):
+            if not module.startswith("steam_manager.io"):
+                continue
+            # Strip module prefix to get the last segment (e.g. "io.compat_tools").
+            if name.startswith("_") and name not in allowed_private:
+                violations.append((str(f.relative_to(SRC)), module, name))
+    assert not violations, (
+        "cli/ imported private io/ symbols (leaked-private antipattern): "
+        + ", ".join(f"{f}: {m}.{n}" for f, m, n in violations)
+    )

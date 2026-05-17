@@ -84,11 +84,85 @@ def test_apply_writes_compat_and_launch(fake_steam, tmp_path, monkeypatch):
     assert result.exit_code == 0
 
     # Verifica che 222 abbia ora compat tool e launch options
-    from steam_manager import steam as st
-    ctx = st.discover(steam_root=fake_steam)
-    assert st.get_compat_tool(ctx, "222") == "Proton-CachyOS Latest"
-    user = next(u for u in st.list_users(ctx) if u.is_active)
-    assert st.get_launch_options(user, "222") == "scopebuddy -- %command%"
+    from steam_manager.io import config_vdf as st_cfg, discovery as st_disc, localconfig_vdf as st_lc
+    from steam_manager.models import SteamApp
+    ctx = st_disc.discover(steam_root=fake_steam)
+    assert st_cfg.get_compat_tool(ctx, "222") == "Proton-CachyOS Latest"
+    user = next(u for u in st_disc.list_users(ctx) if u.is_active)
+    assert st_lc.get_launch_options(user, "222") == "scopebuddy -- %command%"
+
+
+def test_clear_wipes_compat_and_launch_with_yes(fake_steam, tmp_path, monkeypatch):
+    """`clear --yes` removes every compat override + launch option, creates a checkpoint."""
+    monkeypatch.setenv("STEAM_MANAGER_STEAM_ROOT", str(fake_steam))
+    monkeypatch.setenv("STEAM_MANAGER_POLICY_PATHS",
+                       str(Path(__file__).parent / "fixtures" / "policies_minimal.toml"))
+    backups_dir = tmp_path / "backups"
+    monkeypatch.setenv("STEAM_MANAGER_BACKUP_ROOT", str(backups_dir))
+    monkeypatch.setenv("STEAM_MANAGER_FORCE", "1")
+
+    # First apply, so there are real overrides to clear.
+    apply_result = runner.invoke(cli.app, ["apply"])
+    assert apply_result.exit_code == 0
+
+    # Sanity: overrides exist before clear.
+    from steam_manager.io import config_vdf as st_cfg, discovery as st_disc, localconfig_vdf as st_lc
+    ctx = st_disc.discover(steam_root=fake_steam)
+    assert st_cfg.count_compat_overrides(ctx) >= 1
+    user = next(u for u in st_disc.list_users(ctx) if u.is_active)
+    assert st_lc.count_launch_options(user) >= 1
+
+    # Clear.
+    result = runner.invoke(cli.app, ["clear", "--yes"])
+    assert result.exit_code == 0, result.stdout
+
+    # All compat overrides gone (except Steam's default '0' which clear preserves).
+    assert st_cfg.count_compat_overrides(ctx) == 0
+    # All launch options gone for the active user.
+    assert st_lc.count_launch_options(user) == 0
+    # A checkpoint was taken before the wipe — the dir holds at least one
+    # archive that `restore` could use to roll back.
+    archives = list(backups_dir.glob("*.tar.gz"))
+    assert len(archives) >= 1
+
+
+def test_clear_short_circuits_when_nothing_to_wipe(fake_steam, tmp_path, monkeypatch):
+    """`clear` on a clean install prints success and exits 0 without prompting."""
+    monkeypatch.setenv("STEAM_MANAGER_STEAM_ROOT", str(fake_steam))
+    monkeypatch.setenv("STEAM_MANAGER_POLICY_PATHS",
+                       str(Path(__file__).parent / "fixtures" / "policies_minimal.toml"))
+    monkeypatch.setenv("STEAM_MANAGER_BACKUP_ROOT", str(tmp_path / "backups"))
+    monkeypatch.setenv("STEAM_MANAGER_FORCE", "1")
+
+    # fake_steam fixture comes pre-populated with one compat override and
+    # one launch option. Wipe them first so the short-circuit path can be
+    # exercised on the *second* invocation.
+    runner.invoke(cli.app, ["clear", "--yes"])
+
+    result = runner.invoke(cli.app, ["clear"], input="n\n")
+    assert result.exit_code == 0
+    assert "Nothing to clear" in result.stdout
+
+
+def test_clear_aborts_when_user_declines(fake_steam, tmp_path, monkeypatch):
+    """Without `--yes`, declining the prompt leaves files untouched."""
+    monkeypatch.setenv("STEAM_MANAGER_STEAM_ROOT", str(fake_steam))
+    monkeypatch.setenv("STEAM_MANAGER_POLICY_PATHS",
+                       str(Path(__file__).parent / "fixtures" / "policies_minimal.toml"))
+    monkeypatch.setenv("STEAM_MANAGER_BACKUP_ROOT", str(tmp_path / "backups"))
+    monkeypatch.setenv("STEAM_MANAGER_FORCE", "1")
+
+    # Apply first so there's something to clear.
+    runner.invoke(cli.app, ["apply"])
+    from steam_manager.io import config_vdf as st_cfg, discovery as st_disc
+    ctx = st_disc.discover(steam_root=fake_steam)
+    before = st_cfg.count_compat_overrides(ctx)
+    assert before >= 1
+
+    result = runner.invoke(cli.app, ["clear"], input="n\n")
+    assert result.exit_code == 0
+    # File untouched.
+    assert st_cfg.count_compat_overrides(ctx) == before
 
 
 def test_apply_aborts_if_steam_running(fake_steam, tmp_path, monkeypatch):
@@ -350,9 +424,10 @@ def test_scb_init_appid_creates_stub(fake_steam, tmp_path, monkeypatch):
 
 def test_is_listable_filters_dlc_music(monkeypatch):
     """DLC/music types are filtered out (section_for_type returns None)."""
-    from steam_manager import steam as st
+    from steam_manager.io import config_vdf as st_cfg, discovery as st_disc, localconfig_vdf as st_lc
+    from steam_manager.models import SteamApp
     types = {"1495710": "music"}
-    fake = st.SteamApp(appid="1495710",
+    fake = SteamApp(appid="1495710",
                        name="Cyberpunk 2077 Bonus Content",
                        library=Path("/tmp"),
                        state_flags=4)
@@ -361,9 +436,10 @@ def test_is_listable_filters_dlc_music(monkeypatch):
 
 def test_is_listable_accepts_beta_as_game(monkeypatch):
     """Type 'beta' maps to games section -> listable."""
-    from steam_manager import steam as st
+    from steam_manager.io import config_vdf as st_cfg, discovery as st_disc, localconfig_vdf as st_lc
+    from steam_manager.models import SteamApp
     types = {"1810920": "beta"}
-    fake = st.SteamApp(appid="1810920",
+    fake = SteamApp(appid="1810920",
                        name="Operation Lovecraft",
                        library=Path("/tmp"),
                        state_flags=4)
@@ -372,9 +448,10 @@ def test_is_listable_accepts_beta_as_game(monkeypatch):
 
 def test_is_listable_accepts_application(monkeypatch):
     """Type 'application' maps to applications section -> listable."""
-    from steam_manager import steam as st
+    from steam_manager.io import config_vdf as st_cfg, discovery as st_disc, localconfig_vdf as st_lc
+    from steam_manager.models import SteamApp
     types = {"993090": "application"}
-    fake = st.SteamApp(appid="993090",
+    fake = SteamApp(appid="993090",
                        name="Lossless Scaling",
                        library=Path("/tmp"),
                        state_flags=4)
@@ -383,8 +460,9 @@ def test_is_listable_accepts_application(monkeypatch):
 
 def test_is_listable_filters_proton_by_name_prefix(monkeypatch):
     """Anche se appinfo classifica come game, il prefisso 'Proton' filtra."""
-    from steam_manager import steam as st
-    fake = st.SteamApp(appid="999",
+    from steam_manager.io import config_vdf as st_cfg, discovery as st_disc, localconfig_vdf as st_lc
+    from steam_manager.models import SteamApp
+    fake = SteamApp(appid="999",
                        name="Proton-CachyOS Latest",
                        library=Path("/tmp"),
                        state_flags=4)
