@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 
 @dataclass
@@ -56,3 +57,11 @@ class ShortcutsFile:
     user: SteamUser
     path: Path
     exists: bool
+
+
+@dataclass(frozen=True)
+class CompatTool:
+    tech_name: str
+    display_name: str
+    source: Literal["custom", "official", "builtin"]
+    install_path: Path | None
