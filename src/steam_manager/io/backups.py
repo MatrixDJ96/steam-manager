@@ -9,6 +9,7 @@ to enable rollback via `restore`.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tarfile
 from io import BytesIO
@@ -47,6 +48,11 @@ def create_checkpoint(
         if tmp.exists():
             tmp.unlink()
         raise
+    # The archive contains per-user `localconfig.vdf` (account names,
+    # Steam IDs, LastPlayed, friend graph fragments) and any user-pasted
+    # `LaunchOptions` (sometimes embedding API keys, Wine prefix tokens).
+    # World-readable would leak that to other local users on a shared box.
+    os.chmod(archive_path, 0o600)
     return archive_path
 
 
@@ -89,6 +95,16 @@ def extract_checkpoint(archive_path: Path, targets: dict[str, Path]) -> list[str
 
     Returns the list of archive-names successfully extracted; targets not
     found in the archive are silently skipped.
+
+    Each file is written to a sibling `.tmp` and renamed atomically via
+    `os.replace`. A crash mid-restore can leave fewer files restored than
+    intended (impossible to make a multi-file restore truly transactional
+    without two-phase locking), but each individual destination is never
+    left half-written or corrupted.
+
+    Symlinked archive members (`issym`/`islnk`) are rejected — they have no
+    legitimate use in our checkpoints and would otherwise let a malicious
+    archive escape its containment to attacker-chosen paths.
     """
     extracted: list[str] = []
     with tarfile.open(archive_path, "r:gz") as tar:
@@ -97,12 +113,16 @@ def extract_checkpoint(archive_path: Path, targets: dict[str, Path]) -> list[str
                 member = tar.getmember(name)
             except KeyError:
                 continue
+            if member.issym() or member.islnk():
+                continue
             mf = tar.extractfile(member)
             if mf is None:
                 continue
             dest.parent.mkdir(parents=True, exist_ok=True)
-            with dest.open("wb") as out:
+            tmp_dest = dest.with_suffix(dest.suffix + ".tmp")
+            with tmp_dest.open("wb") as out:
                 shutil.copyfileobj(mf, out)
+            os.replace(tmp_dest, dest)
             extracted.append(name)
     return extracted
 
