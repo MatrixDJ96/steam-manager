@@ -10,7 +10,7 @@ from steam_manager.cli._common import ExitCode, steam_root
 from steam_manager.cli.app import app
 
 
-@app.command(name="open", rich_help_panel="Extras")
+@app.command(name="open")
 def open_cmd(
     appid: str = typer.Argument(..., help="AppID of an installed game"),
     compat: bool = typer.Option(

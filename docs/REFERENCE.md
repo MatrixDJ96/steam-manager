@@ -62,18 +62,43 @@ filters out common non-game patterns (soundtracks, OSTs, etc.).
 
 ## Commands
 
+Same five panels as `steam-manager --help`.
+
+### Inspect
+
+| Command  | Description |
+|----------|-------------|
+| `list`   | List installed games with compat tool and per-user launch options. Drift rows are **bold**, conforming rows are **dim**. AppID and Name cells are clickable OSC 8 links. |
+| `diff`   | Show planned changes vs policy (read-only). Exits 1 if drift exists. |
+
+### Apply
+
+| Command  | Description |
+|----------|-------------|
+| `apply`  | Apply planned changes. Creates an auto-backup checkpoint; aborts if Steam is running (use `--force` to bypass). |
+| `clear`  | Wipe ALL compat tool overrides + launch options for every app (no type filter). Auto-backup. |
+
+### Backup
+
+| Command   | Description |
+|-----------|-------------|
+| `backup`  | Manually create a full checkpoint archive. |
+| `restore` | Restore from a previous checkpoint. Interactive single-select or `--last`. Aborts if Steam is running. |
+
+### Steam tools
+
 | Command              | Description |
 |----------------------|-------------|
-| `list`               | List installed games with compat tool and per-user launch options. Drift rows are **bold**, conforming rows are **dim**. AppID and Name cells are clickable OSC 8 links. |
-| `diff`               | Show planned changes vs policy (read-only). Exits 1 if drift exists. |
-| `apply`              | Apply planned changes. Creates an auto-backup checkpoint; aborts if Steam is running (use `--force` to bypass). |
-| `backup`             | Manually create a full checkpoint archive. |
-| `restore`            | Restore from a previous checkpoint. Interactive single-select or `--last`. Aborts if Steam is running. |
-| `open &lt;appid&gt;`       | Open the game's install folder (or `--compat` for compatdata) via `xdg-open`. |
-| `clear`              | Wipe ALL compat tool overrides + launch options for every app (no type filter). Auto-backup. |
 | `scopebuddy` / `scb` | ScopeBuddy: `observe` (default) + `init` (per AppID, `--missing`, interactive). `scb` is a short hidden alias. |
 | `shortcuts` / `sct`  | Edit Steam's binary `shortcuts.vdf` (non-Steam games). `path`, `show`, `edit`. `sct` is a short hidden alias. |
-| `update`             | Self-update the binary to the latest GitHub release. `--check` (read-only), `--yes` (skip prompt), `--force` (reinstall same version). PyInstaller-only. |
+| `open &lt;appid&gt;`       | Open the game's install folder (or `--compat` for compatdata) via `xdg-open`. |
+
+### Manage
+
+| Command  | Description |
+|----------|-------------|
+| `config` | Edit and inspect the user policy file (`~/.config/steam-manager/policies.toml`). Sub-commands: `path`, `show`, `edit`, `get`, `set`, `unset`, `ignore`, `reset`. |
+| `update` | Self-update the binary to the latest GitHub release. `--check` (read-only), `--yes` (skip prompt), `--force` (reinstall same version). PyInstaller-only. |
 
 ### Global options
 

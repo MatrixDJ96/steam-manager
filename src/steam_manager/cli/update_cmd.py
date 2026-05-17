@@ -106,7 +106,7 @@ def _post_install_version(binary: Path) -> str | None:
     return (result.stdout or "").strip()
 
 
-@app.command(name="update", rich_help_panel="Extras")
+@app.command(name="update")
 def update_cmd(
     check: bool = typer.Option(
         False, "--check", help="Only check for a new version; don't install.",

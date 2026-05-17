@@ -36,10 +36,11 @@ def install_rich_click(app):
 
     rich_click.rich_click.COMMAND_GROUPS = {
         "steam-manager": [
-            {"name": "Commands", "commands": [
-                "list", "diff", "apply", "backup", "restore",
-            ]},
-            {"name": "Extras", "commands": ["open", "clear", "scopebuddy", "shortcuts", "update"]},
+            {"name": "Inspect", "commands": ["list", "diff"]},
+            {"name": "Apply", "commands": ["apply", "clear"]},
+            {"name": "Backup", "commands": ["backup", "restore"]},
+            {"name": "Steam tools", "commands": ["scopebuddy", "shortcuts", "open"]},
+            {"name": "Manage", "commands": ["config", "update"]},
         ],
     }
 

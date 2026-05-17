@@ -55,9 +55,9 @@ from steam_manager.cli.config_cmd import config_app  # noqa: E402
 from steam_manager.cli.scopebuddy_cmd import scopebuddy_app  # noqa: E402
 from steam_manager.cli.shortcuts_cmd import shortcuts_app  # noqa: E402
 
-app.add_typer(config_app, name="config", rich_help_panel="Extras")
-app.add_typer(scopebuddy_app, name="scopebuddy", rich_help_panel="Extras")
-app.add_typer(shortcuts_app, name="shortcuts", rich_help_panel="Extras")
+app.add_typer(config_app, name="config")
+app.add_typer(scopebuddy_app, name="scopebuddy")
+app.add_typer(shortcuts_app, name="shortcuts")
 
 # Short hidden aliases (functional, omitted from `--help`).
 app.add_typer(scopebuddy_app, name="scb", hidden=True)

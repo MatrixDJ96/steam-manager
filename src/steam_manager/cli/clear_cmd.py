@@ -15,7 +15,7 @@ from steam_manager.cli._targets import (
 from steam_manager.cli.app import app
 
 
-@app.command(name="clear", rich_help_panel="Extras")
+@app.command(name="clear")
 def clear_cmd(
     user: str | None = typer.Option(
         None, "--user",
