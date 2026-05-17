@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "steam-manager"
-version = "0.1.0"
+version = "0.2.0"
 description = "CLI to audit and apply policies on a local Steam library"
 requires-python = ">=3.11"
 license = { text = "MIT" }
