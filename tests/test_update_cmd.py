@@ -146,7 +146,7 @@ def test_update_available_with_yes_runs_installer(
         json_body=latest_payload,
     )
     fake_urlopen.add(
-        "https://raw.githubusercontent.com/MatrixDJ96/steam-manager/main/scripts/install.sh",
+        "https://raw.githubusercontent.com/MatrixDJ96/steam-manager/v999.0.0/scripts/install.sh",
         body=b"#!/usr/bin/env bash\necho fake install\n",
     )
     result = runner.invoke(cli.app, ["update", "--yes"])
@@ -175,7 +175,7 @@ def test_force_runs_install_even_when_on_latest(
         },
     )
     fake_urlopen.add(
-        "https://raw.githubusercontent.com/MatrixDJ96/steam-manager/main/scripts/install.sh",
+        f"https://raw.githubusercontent.com/MatrixDJ96/steam-manager/v{__version__}/scripts/install.sh",
         body=b"#!/usr/bin/env bash\n",
     )
     # The post-install --version subprocess must return the *current* version
@@ -199,7 +199,7 @@ def test_installer_nonzero_exit_propagates_write_error(
         json_body=latest_payload,
     )
     fake_urlopen.add(
-        "https://raw.githubusercontent.com/MatrixDJ96/steam-manager/main/scripts/install.sh",
+        "https://raw.githubusercontent.com/MatrixDJ96/steam-manager/v999.0.0/scripts/install.sh",
         body=b"#!/usr/bin/env bash\n",
     )
     # First subprocess call (bash) returns non-zero.
@@ -219,7 +219,7 @@ def test_post_install_version_mismatch_errors(
         json_body=latest_payload,
     )
     fake_urlopen.add(
-        "https://raw.githubusercontent.com/MatrixDJ96/steam-manager/main/scripts/install.sh",
+        "https://raw.githubusercontent.com/MatrixDJ96/steam-manager/v999.0.0/scripts/install.sh",
         body=b"#!/usr/bin/env bash\n",
     )
     # First call (installer) succeeds. Second call (--version) returns the OLD version.
@@ -258,7 +258,7 @@ def test_release_notes_rendered_before_installer(
         json_body=latest_payload,
     )
     fake_urlopen.add(
-        "https://raw.githubusercontent.com/MatrixDJ96/steam-manager/main/scripts/install.sh",
+        "https://raw.githubusercontent.com/MatrixDJ96/steam-manager/v999.0.0/scripts/install.sh",
         body=b"#!/usr/bin/env bash\n",
     )
     result = runner.invoke(cli.app, ["update", "--yes"])

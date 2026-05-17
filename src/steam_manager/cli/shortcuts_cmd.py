@@ -9,20 +9,22 @@ from pathlib import Path
 
 import typer
 
-from steam_manager import render, steam
+from steam_manager import render
 from steam_manager.cli._checkpoint import make_checkpoint
 from steam_manager.cli._common import ExitCode, steam_root
 from steam_manager.cli._editor import choose_editor
 from steam_manager.cli._steam_guard import check_steam_closed
+from steam_manager.io import discovery
 from steam_manager.io import shortcuts_vdf as _shortcuts
+from steam_manager.models import SteamUser
 
 shortcuts_app = typer.Typer(help="Inspect and edit non-Steam game shortcuts.")
 
 
-def _resolve_target(user_flag: str | None) -> tuple[steam.SteamUser, _shortcuts.ShortcutsFile]:
+def _resolve_target(user_flag: str | None) -> tuple[SteamUser, _shortcuts.ShortcutsFile]:
     """Find the user + their shortcuts.vdf. Prompts when multiple users + no flag."""
-    ctx = steam.discover(steam_root=steam_root())
-    users = steam.list_users(ctx)
+    ctx = discovery.discover(steam_root=steam_root())
+    users = discovery.list_users(ctx)
     if not users:
         render.error("No Steam users found.")
         raise typer.Exit(ExitCode.PARSE_ERROR)
@@ -128,7 +130,11 @@ def edit(
                     raise typer.Exit(ExitCode.PARSE_ERROR)
                 continue
 
-            if text == initial:
+            # Compare on the parsed structure, not the raw text — editors
+            # that normalize whitespace, trailing newlines, or Unicode
+            # escapes would otherwise trigger a redundant write on data
+            # that's semantically identical.
+            if new_data == data:
                 render.warning("No changes — nothing written.")
                 raise typer.Exit(ExitCode.OK)
 

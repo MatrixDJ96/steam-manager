@@ -3,13 +3,14 @@ from __future__ import annotations
 
 import typer
 
-from steam_manager import policy, render, steam
+from steam_manager import policy, render
 from steam_manager.cli._checkpoint import build_steam_files, make_checkpoint
 from steam_manager.cli._common import ExitCode, policy_paths, steam_root
 from steam_manager.cli._drift import compute_drift
 from steam_manager.cli._steam_guard import check_steam_closed
 from steam_manager.cli._targets import effective_target_spec, target_users_banner
 from steam_manager.cli.app import app
+from steam_manager.io import config_vdf, discovery, localconfig_vdf
 
 
 @app.command()
@@ -31,9 +32,9 @@ def apply(
     """Apply planned changes (auto-backup, no dry-run)."""
     check_steam_closed(force)
 
-    ctx = steam.discover(steam_root=steam_root())
-    apps = steam.list_apps(ctx)
-    users = steam.list_users(ctx)
+    ctx = discovery.discover(steam_root=steam_root())
+    apps = discovery.list_apps(ctx)
+    users = discovery.list_users(ctx)
     engine = policy.load(policy_paths())
 
     target_spec = effective_target_spec(engine.target_users, user, all_users)
@@ -65,21 +66,36 @@ def apply(
     )
 
     users_by_name = {u.account_name: u for u in users}
-    for c in changes:
-        if c["field"] == "compat_tool":
-            steam.set_compat_tool(ctx, c["appid"], c["new"])
-            render.success(
-                f"[bold]{c['appid']}[/bold]  {c['name']}: "
-                f"[bold]compat_tool[/bold] updated"
-            )
-        elif c["field"] == "launch_options":
-            user = users_by_name[c["user"]]
-            steam.set_launch_options(user, c["appid"], c["new"])
-            render.success(
-                f"[bold]{c['appid']}[/bold]  {c['name']}: "
-                f"[bold]launch_options[/bold] updated "
-                f"([cyan]user[/cyan]:[bold cyan]{c['user']}[/bold cyan])"
-            )
+    applied = 0
+    try:
+        for c in changes:
+            if c["field"] == "compat_tool":
+                config_vdf.set_compat_tool(ctx, c["appid"], c["new"])
+                render.success(
+                    f"[bold]{c['appid']}[/bold]  {c['name']}: "
+                    f"[bold]compat_tool[/bold] updated"
+                )
+            elif c["field"] == "launch_options":
+                user = users_by_name[c["user"]]
+                localconfig_vdf.set_launch_options(user, c["appid"], c["new"])
+                render.success(
+                    f"[bold]{c['appid']}[/bold]  {c['name']}: "
+                    f"[bold]launch_options[/bold] updated "
+                    f"([cyan]user[/cyan]:[bold cyan]{c['user']}[/bold cyan])"
+                )
+            applied += 1
+    except OSError as exc:
+        # A write fault (locked file, permission denied, disk full, ...)
+        # mid-loop leaves some changes applied and others pending. Steer
+        # the user to `restore --last` instead of letting them debug a
+        # raw OSError traceback.
+        render.error(
+            f"Write failed after {applied}/{len(changes)} change(s): {exc}\n"
+            f"The pre-apply state is preserved in checkpoint "
+            f"[bold cyan]{ts}[/bold cyan]. Run "
+            f"[bold]steam-manager restore --last[/bold] to roll back."
+        )
+        raise typer.Exit(ExitCode.WRITE_ERROR)
 
     render.success(f"[bold]{len(changes)}[/bold] changes applied.")
     raise typer.Exit(ExitCode.OK)

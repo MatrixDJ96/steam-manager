@@ -2,9 +2,22 @@
 
 Python owns *discovery* (GitHub API call, version compare, release-notes
 rendering); the actual download + SHA-256 verify + atomic replace is
-delegated to a fresh copy of `scripts/install.sh` fetched from main on
-every update. This keeps install logic in one place (the script) and lets
-old binaries auto-heal when the release-asset layout changes upstream.
+delegated to a fresh copy of `scripts/install.sh` fetched from the
+**release tag** on every update. This keeps install logic in one place
+(the script) and lets old binaries auto-heal when the release-asset
+layout changes upstream.
+
+Trust boundary: `install.sh` itself is fetched over HTTPS (raw.github
+content) and *not* signature-verified — TLS + GitHub account integrity
+are the trust roots. Fetching from the immutable release tag (rather
+than `main`) limits the attack window to a force-push of that tag, not
+"any malicious commit landed on main between releases". A proper cosign
+or minisign signature on the release asset is the next step; documented
+in the security audit (SEC-005/006).
+
+The binary that install.sh then downloads IS SHA-256 verified against
+the `.sha256` companion file shipped as a release asset, so once we
+trust install.sh, downstream integrity is enforced.
 
 Linux-only by design: `os.replace` over a running binary works because of
 unlink-while-mmap semantics; install.sh enforces the platform check.
@@ -25,11 +38,25 @@ from steam_manager.cli._common import ExitCode, update_state_path
 from steam_manager.cli.app import app
 from steam_manager.io import github_releases
 
-_INSTALL_SH_URL = (
-    "https://raw.githubusercontent.com/MatrixDJ96/steam-manager/main/scripts/install.sh"
+_INSTALL_SH_URL_TEMPLATE = (
+    "https://raw.githubusercontent.com/MatrixDJ96/steam-manager/{ref}/scripts/install.sh"
 )
 _MAX_NOTES_LINES = 40
 _MAX_NOTES_BYTES = 4096
+
+
+def _sanity_check_installer(text: str) -> str | None:
+    """Return None if `text` looks like a plausible bash installer, else a
+    human-readable reason. Defends against HTML error pages, empty bodies,
+    or completely non-script content being piped into `bash`."""
+    if not text or not text.strip():
+        return "empty response body"
+    first = text.lstrip().splitlines()[0]
+    if not first.startswith("#!"):
+        return f"missing shebang (first line: {first[:60]!r})"
+    if "bash" not in first and "sh" not in first:
+        return f"shebang doesn't look like a shell (first line: {first[:60]!r})"
+    return None
 
 
 def _refuse_if_not_frozen() -> None:
@@ -160,11 +187,26 @@ def update_cmd(
         render.info("Cancelled.")
         raise typer.Exit(ExitCode.OK)
 
-    # Fetch a fresh install.sh from main; self-heals across release-format changes.
+    # Fetch install.sh pinned to the release tag (not `main`), so a malicious
+    # commit landed on `main` between releases can't substitute the
+    # installer. Trust still rests on TLS + GitHub account integrity for the
+    # tag itself; see module docstring for the threat model.
+    install_sh_url = _INSTALL_SH_URL_TEMPLATE.format(ref=release.tag)
     try:
-        script_text = github_releases.fetch_text(_INSTALL_SH_URL)
+        script_text = github_releases.fetch_text(install_sh_url)
     except github_releases.GitHubReleaseError as exc:
         render.error(f"Could not fetch installer script: {exc}")
+        raise typer.Exit(ExitCode.WRITE_ERROR)
+
+    # Sanity-gate: refuse to pipe non-script content into bash. A captive
+    # portal, HTML 404 page, or an empty body would otherwise run as
+    # whatever bash makes of it.
+    reject_reason = _sanity_check_installer(script_text)
+    if reject_reason is not None:
+        render.error(
+            f"Installer script from {install_sh_url} failed sanity check: "
+            f"{reject_reason}. Refusing to execute."
+        )
         raise typer.Exit(ExitCode.WRITE_ERROR)
 
     fd, tmp_path_str = tempfile.mkstemp(prefix="steam-manager-install-", suffix=".sh")
