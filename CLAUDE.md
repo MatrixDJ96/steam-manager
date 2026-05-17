@@ -67,14 +67,15 @@ src/steam_manager/
     ├── _appinfo.py       appinfo_types @lru_cache + is_listable() + NON_GAME_NAME_PREFIXES
     ├── _drift.py         compute_drift() — used by list/diff/apply
     ├── _targets.py       resolve_target_users/effective_target_spec/target_users_banner
-    ├── list_cmd.py       `list` command  (one file per command, pip/pipx convention)
-    ├── diff_cmd.py       `diff` command
-    ├── apply_cmd.py      `apply` command
-    ├── clear_cmd.py      `clear` command
-    ├── open_cmd.py       `open` command
-    ├── backup_cmd.py     `backup` command
-    ├── restore_cmd.py    `restore` command
-    ├── config_cmd.py     `config` sub-typer (path/show/edit/get/set/unset/ignore/reset)
+    ├── list_cmd.py       `list` — game inventory with compat tool + per-user launch options
+    ├── diff_cmd.py       `diff` — preview policy drift (read-only; exit 1 if drift)
+    ├── apply_cmd.py      `apply` — write policy drift to disk (auto-backup, no dry-run)
+    ├── clear_cmd.py      `clear` — wipe all compat overrides + launch options (auto-backup)
+    ├── open_cmd.py       `open` — open game install dir (or compatdata) via xdg-open
+    ├── backup_cmd.py     `backup` — manually create a full checkpoint archive
+    ├── restore_cmd.py    `restore` — interactive restore from a previous checkpoint
+    ├── update_cmd.py     `update` — self-update binary from GitHub releases
+    ├── config_cmd.py     `config` sub-typer for ~/.config/steam-manager/policies.toml (path/show/edit/get/set/...)
     ├── scopebuddy_cmd.py `scopebuddy` sub-typer for per-game ScopeBuddy stubs (observe/init)
     ├── shortcuts_cmd.py  `shortcuts` sub-typer for the binary shortcuts.vdf of non-Steam games (path/show/edit)
     └── __init__.py       wires everything: side-effect imports of *_cmd, add_typer, main()
