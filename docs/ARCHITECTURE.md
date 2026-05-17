@@ -80,18 +80,20 @@ this with AST inspection.
 │   │   ├── policies_toml.py         # user policy file R/W (tomlkit-based)
 │   │   ├── appinfo.py               # binary appinfo.vdf parser
 │   │   ├── scopebuddy.py            # ScopeBuddy observe + stub init
+│   │   ├── compat_tools.py          # discovery of installed compat tools (Proton custom + official)
 │   │   └── backups.py               # atomic .tar.gz checkpoints
 │   └── cli/                         # Typer entry + each command in its own file
 │       ├── __init__.py              # wires side-effect imports + main()
 │       ├── app.py                   # Typer() singleton + root callback
 │       ├── _common.py               # ExitCode, path helpers, env-var overrides
 │       ├── _rich.py                 # install_rich_click() monkey-patch
-│       ├── _editor.py               # choose_editor() shared by config + shortcuts
+│       ├── _editor.py               # choose_editor() used by `shortcuts edit`
 │       ├── _checkpoint.py           # make_checkpoint() — single manifest schema
 │       ├── _steam_guard.py          # check_steam_closed() refuses writes while alive
 │       ├── _appinfo.py              # appinfo_types @lru_cache + is_listable filter
 │       ├── _drift.py                # compute_drift() used by list/diff/apply
 │       ├── _targets.py              # --user/--all-users resolution + banner
+│       ├── _wizard.py               # `config wizard` flow (show + targeted edit + diff + confirm)
 │       ├── list_cmd.py              # `list` — game inventory with compat tool + per-user launch options
 │       ├── diff_cmd.py              # `diff` — preview policy drift (read-only; exit 1 if drift)
 │       ├── apply_cmd.py             # `apply` — write policy drift to disk (auto-backup, no dry-run)
@@ -100,14 +102,14 @@ this with AST inspection.
 │       ├── backup_cmd.py            # `backup` — manually create a full checkpoint archive
 │       ├── restore_cmd.py           # `restore` — interactive restore from a previous checkpoint
 │       ├── update_cmd.py            # `update` — self-update binary from GitHub releases
-│       ├── config_cmd.py            # `config` sub-typer for ~/.config/steam-manager/policies.toml (path/show/edit/get/set/...)
+│       ├── config_cmd.py            # `config` sub-typer for ~/.config/steam-manager/policies.toml (path/show/edit/get/set/wizard/...)
 │       ├── scopebuddy_cmd.py        # `scopebuddy` sub-typer for per-game ScopeBuddy stubs (observe/init)
 │       └── shortcuts_cmd.py         # `shortcuts` sub-typer for the binary shortcuts.vdf of non-Steam games (path/show/edit)
 ├── tests/
 │   ├── fixtures/                    # synthetic VDF + TOML fixtures
 │   ├── conftest.py                  # fake_steam fixture
 │   ├── test_architecture.py         # AST-based layering invariants
-│   └── test_*.py                    # 113 tests total
+│   └── test_*.py                    # 223 tests total
 └── docs/
     ├── HOWTO.md                     # cookbook for common scenarios
     ├── REFERENCE.md                 # operator reference (schema, exit codes, env vars)
@@ -168,6 +170,12 @@ through `io/_vdf_util.ci_get()`.
   launch_options)` returns a `ScopeBuddyObservation` with
   `games_with_scb_launch` / `missing_configs` / `orphan_configs`.
   `init_stub(target_path, name, force)` writes a minimal two-line stub.
+- **`compat_tools.py`** — `list_compat_tools(ctx) -> list[CompatTool]`.
+  Discovers Proton/GE-Proton/etc. from two sources: `compatibilitytools.d/`
+  (user-installed custom tools, one `compatibilitytool.vdf` each) and
+  `appmanifest_*.acf` filtered by `name.startswith("Proton")` (official
+  Proton builds Steam installs as apps). Used by the `config wizard`
+  picker so the user never has to type a tech_name by hand.
 - **`backups.py`** — `create_checkpoint(root, ts, files, manifest)`,
   `list_checkpoints(root)`, `extract_checkpoint(archive, targets)`,
   `prune_checkpoints(root, limit)`. Atomic via temp file + rename.
@@ -277,7 +285,7 @@ that section.
 
 ## 7. Testing
 
-113 tests under `tests/`, all driven by `pytest` with synthetic VDF and TOML
+223 tests under `tests/`, all driven by `pytest` with synthetic VDF and TOML
 fixtures, running in under one second. The `fake_steam` fixture in
 `conftest.py` builds a self-contained Steam tree in `tmp_path` so tests
 never touch the real Steam install.

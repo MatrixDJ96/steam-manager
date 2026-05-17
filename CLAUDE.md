@@ -18,7 +18,7 @@ pip install -e ".[dev]"                     # add [build] for PyInstaller
 ## Common commands
 
 ```bash
-pytest                                      # full suite (113 tests, <1s)
+pytest                                      # full suite (223 tests, <2s)
 pytest tests/test_cli.py -v                 # one file
 pytest tests/test_architecture.py           # layering invariants (5 tests)
 pytest -k "diff and appid"                  # one test by name pattern
@@ -55,18 +55,20 @@ src/steam_manager/
 │   ├── backups.py        atomic .tar.gz checkpoint API (create/list/extract/prune)
 │   ├── appinfo.py        parser for Steam's binary appinfo.vdf cache
 │   ├── scopebuddy.py     observe missing/orphan configs, init L1 stub
+│   ├── compat_tools.py   discovery of installed compat tools (Proton custom + official)
 │   └── _vdf_util.py      private: ci_get() for case-insensitive VDF lookups
 │
 └── cli/                  Typer + rich-click layer
     ├── app.py            `app = typer.Typer(...)`, version callback, root callback
     ├── _common.py        ExitCode, USER_POLICY_PATH, steam_root, backup_root, iso_timestamp
     ├── _rich.py          install_rich_click() — Click monkey-patch for aligned --help columns
-    ├── _editor.py        choose_editor() shared by `config edit` and `shortcuts edit`
+    ├── _editor.py        choose_editor() used by `shortcuts edit`
     ├── _checkpoint.py    make_checkpoint() + build_steam_files() — single manifest schema
     ├── _steam_guard.py   check_steam_closed() — refuses writes while Steam is alive
     ├── _appinfo.py       appinfo_types @lru_cache + is_listable() + NON_GAME_NAME_PREFIXES
     ├── _drift.py         compute_drift() — used by list/diff/apply
     ├── _targets.py       resolve_target_users/effective_target_spec/target_users_banner
+    ├── _wizard.py        `config wizard` flow (show + targeted edit + diff + confirm)
     ├── list_cmd.py       `list` — game inventory with compat tool + per-user launch options
     ├── diff_cmd.py       `diff` — preview policy drift (read-only; exit 1 if drift)
     ├── apply_cmd.py      `apply` — write policy drift to disk (auto-backup, no dry-run)
@@ -133,7 +135,8 @@ Real Steam writes keys inconsistently between versions: the apps section in `loc
 Tests never touch the real Steam install. The `fake_steam` fixture in `tests/conftest.py` builds a self-contained Steam tree under `tmp_path` (libraryfolders, two app manifests, loginusers, localconfig, config). Tests that need to bypass the production paths set env vars that `cli/_common.py` honors:
 
 - `STEAM_MANAGER_STEAM_ROOT` — overrides the discovered Steam root
-- `STEAM_MANAGER_POLICY_PATHS` — colon-separated list of TOML paths
+- `STEAM_MANAGER_POLICY_PATHS` — colon-separated list of TOML paths (replaces factory + user merge)
+- `STEAM_MANAGER_USER_POLICY` — overrides just the user policy path (factory still merged on top)
 - `STEAM_MANAGER_BACKUP_ROOT` — overrides `~/.local/state/.../backups`
 - `STEAM_MANAGER_SCB_DIR` — overrides the ScopeBuddy configs dir (`~/.config/scopebuddy/games/steam/`)
 - `STEAM_MANAGER_FORCE` — when `"1"`, equivalent to passing `--force` (skips Steam-running check)

@@ -24,48 +24,73 @@ steam-manager apply    # commit them (auto-backup first)
 
 The exact name (`"Proton-CachyOS Latest"`, `"proton_experimental"`, ...) is
 the string Steam expects in `config.vdf`; it is not resolved by
-`steam-manager`.
+`steam-manager`. If you don't know the right tech name, use the wizard
+(below) — it lists Proton builds actually installed on your system.
 
-## Edit your policy file without leaving the shell
+## Pick a Proton with an interactive wizard
 
-```bash
-steam-manager config edit
-```
-
-Opens `$EDITOR` on `~/.config/steam-manager/policies.toml`. The first time
-you run it, the file is created from a commented template. If you save
-invalid TOML, the editor re-opens with the parse error in a comment at the
-top — fix it or Ctrl-C to abort.
+If typing the right `compat_tool` string by hand is error-prone (it is —
+Steam silently ignores an unrecognised name), run the wizard:
 
 ```bash
-steam-manager config path          # where is the file?
-steam-manager config show          # print the effective config (factory + user)
-cat $(steam-manager config path)   # print the raw user override file
+steam-manager config wizard
 ```
+
+The wizard runs a *show + targeted edit + confirm* loop: it first prints
+the current effective config, then lets you pick an area to edit (compat
+& launch / general / ignore list / reset), walks you through picker-based
+prompts with the current value pre-selected, shows a yellow diff table
+of what would change, and asks `Apply changes? Y/n` before writing. Then
+it loops back to the menu, so you can chain edits in one session and
+abort any one of them without leaving the wizard.
+
+For compat tool, the picker lists every Proton found in
+`~/.steam/compatibilitytools.d/` (custom: GE-Proton, Proton-CachyOS, ...)
+plus every Proton installed by Steam itself as an app (official:
+Experimental, 9.0, ...), showing both the human display name and the
+tech name that Steam recognises in `config.vdf`. `[current]` marks the
+one currently active.
+
+Prefer the wizard when you don't already know the exact value to write;
+prefer `config set <key> <value>` when you do.
+
+## Inspect or edit the raw policy file
+
+```bash
+steam-manager config path           # where is the file?
+$EDITOR $(steam-manager config path)  # open it in your editor
+cat $(steam-manager config path)    # print the raw user override file
+```
+
+The wizard's "Show current configuration" entry prints the *effective*
+config (factory + user, merged) when you want to inspect from inside the
+interactive flow.
 
 ## Reset your overrides to the factory defaults
 
+The wizard has a "Reset to defaults" entry that does this with a
+confirmation prompt. From scripts, the same outcome is one rm:
+
 ```bash
-steam-manager config reset           # asks for confirmation
-steam-manager config reset --yes     # skips the prompt (for scripts)
+rm $(steam-manager config path)
 ```
 
-Overwrites `~/.config/steam-manager/policies.toml` with the bundled factory,
-fully commented out. Your existing overrides are lost.
+The factory defaults are bundled with the binary; removing the user file
+makes the tool read them directly.
 
-## Ignore a game without opening an editor
+## Ignore a game without opening the wizard
 
 ```bash
-steam-manager config ignore 1495710
+steam-manager config set overrides.1495710.ignore true
 ```
 
-Equivalent to adding `[overrides.1495710]` with `ignore = true`. Useful
-right after `steam-manager list` reveals a game you want excluded:
+Equivalent to picking that game in the wizard's "Toggle ignore list" entry.
+Useful right after `steam-manager list` reveals a game you want excluded:
 
 ```bash
-steam-manager list | grep HELLDIVERS    # spot the AppID
-steam-manager config ignore 1495710     # one-shot
-steam-manager diff                      # confirm it's gone from drift
+steam-manager list | grep HELLDIVERS                       # spot the AppID
+steam-manager config set overrides.1495710.ignore true     # one-shot
+steam-manager diff                                         # confirm it's gone from drift
 ```
 
 ## Change the global Proton tool from the CLI
@@ -289,7 +314,7 @@ python3 -m venv ~/.venvs/steam-manager   # keep site-packages off NTFS
 ln -sf ~/.venvs/steam-manager .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                   # 88 hermetic tests, &lt;1s
+pytest                                   # 223 hermetic tests, &lt;2s
 ```
 
 The repository's `CLAUDE.md` documents project-specific quirks (NTFS+btrfs

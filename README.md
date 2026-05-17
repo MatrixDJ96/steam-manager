@@ -71,7 +71,7 @@ bash subprocess, and a prefix on `curl` would only enter `curl`'s environment.
 ### First run
 
 ```bash
-steam-manager config edit      # personalize the policy (or accept the factory defaults)
+steam-manager config           # interactive wizard: pick Proton, set defaults, etc.
 steam-manager diff             # preview what would change (read-only)
 steam-manager apply            # commit the changes (auto-backup first)
 ```
@@ -84,14 +84,13 @@ steam-manager diff             # what `apply` would change
 steam-manager apply            # apply the policy
 ```
 
-### Tweak the policy from the CLI
+### Tweak the policy
 
 ```bash
-steam-manager config show                              # show the effective config
-steam-manager config get games.compat_tool             # read a value
-steam-manager config set games.compat_tool "Proton-X"  # set an override
-steam-manager config ignore 1495710                    # skip an AppID
-steam-manager config reset                             # back to factory defaults
+steam-manager config                                   # interactive wizard (default)
+steam-manager config get games.compat_tool             # read a value (scriptable)
+steam-manager config set games.compat_tool "Proton-X"  # set a value  (scriptable)
+steam-manager config unset overrides.1495710.ignore    # remove a key (scriptable)
 ```
 
 ### Backups
@@ -153,10 +152,12 @@ A factory `policies.toml` ships with the binary. Your overrides live at
 
 Three ways to edit them:
 
-- `steam-manager config edit` — opens `$EDITOR` on the file (seeded with the
-  factory, pre-commented).
-- `steam-manager config set games.compat_tool "Proton-Experimental"` — script-friendly.
-- Edit `~/.config/steam-manager/policies.toml` by hand.
+- `steam-manager config` — interactive wizard with picker-based prompts
+  (lists the Proton builds actually installed on your system; you don't
+  have to type the right tech name by hand).
+- `steam-manager config set games.compat_tool "Proton-Experimental"` —
+  script-friendly primitives (`get` / `set` / `unset` over dotted keys).
+- `$EDITOR $(steam-manager config path)` — edit the raw TOML by hand.
 
 Minimal example:
 
@@ -189,7 +190,7 @@ documented in [`docs/REFERENCE.md`](docs/REFERENCE.md).
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                         # 106 tests, all hermetic, < 1 second
+pytest                         # 223 tests, all hermetic, < 2 seconds
 ```
 
 Architecture, module APIs, and the build pipeline are documented in

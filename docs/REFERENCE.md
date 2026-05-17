@@ -18,7 +18,7 @@ deep-merged on top of the factory file:
 
 ```toml
 [general]
-max_backups  = 20
+max_backups  = 10
 # target_users — special values:
 #   ["active"]      -> only the MostRecent=1 account in loginusers.vdf
 #   ["matrixdj96"]  -> a specific account
@@ -68,7 +68,7 @@ Same five panels as `steam-manager --help`.
 
 | Command  | Description |
 |----------|-------------|
-| `list`   | List installed games with compat tool and per-user launch options. Drift rows are **bold**, conforming rows are **dim**. AppID and Name cells are clickable OSC 8 links. |
+| `list`   | List installed games with compat tool and per-user launch options. Drift rows are **bold**, conforming rows are **dim**. AppID and Name cells are clickable OSC 8 links. `--json` outputs machine-readable JSON instead of the table. |
 | `diff`   | Show planned changes vs policy (read-only). Exits 1 if drift exists. |
 
 ### Apply
@@ -76,7 +76,7 @@ Same five panels as `steam-manager --help`.
 | Command  | Description |
 |----------|-------------|
 | `apply`  | Apply planned changes. Creates an auto-backup checkpoint; aborts if Steam is running (use `--force` to bypass). |
-| `clear`  | Wipe ALL compat tool overrides + launch options for every app (no type filter). Auto-backup. |
+| `clear`  | Wipe ALL compat tool overrides + launch options for every app (no type filter). Auto-backup. `--yes` skips the confirmation prompt; `--force` bypasses the Steam-running check. |
 
 ### Backup
 
@@ -97,7 +97,7 @@ Same five panels as `steam-manager --help`.
 
 | Command  | Description |
 |----------|-------------|
-| `config` | Edit and inspect the user policy file (`~/.config/steam-manager/policies.toml`). Sub-commands: `path`, `show`, `edit`, `get`, `set`, `unset`, `ignore`, `reset`. |
+| `config` | Edit and inspect the user policy file (`~/.config/steam-manager/policies.toml`). With no sub-command, launches the wizard. Sub-commands: `get`, `set`, `unset`, `wizard`, `path`. |
 | `update` | Self-update the binary to the latest GitHub release. `--check` (read-only), `--yes` (skip prompt), `--force` (reinstall same version). PyInstaller-only. |
 
 ### Global options
@@ -115,16 +115,46 @@ modifying operations preserve user comments (via `tomlkit`).
 
 | Sub-command                         | Behavior                                                                                                |
 |-------------------------------------|---------------------------------------------------------------------------------------------------------|
-| `config path`                       | Print the user policy file path.                                                                        |
-| `config show`                       | Print the effective config (factory + user, deep-merged). For the raw user file, use `cat $(steam-manager config path)`. |
-| `config edit`                       | Open `$EDITOR` on the file (seeds with the commented factory if absent). Loops on invalid TOML — pattern `crontab -e`. If you exit without changes on a freshly-seeded file, no file is left on disk. |
-| `config reset [--yes]`              | Reset the file to the commented factory template. Asks for confirmation unless `--yes` is passed.       |
-| `config get <key>`                  | Print the value at a dotted key. Exit 3 if missing.                                                     |
+| `config` *(no sub-command)*         | Launches the interactive `wizard`. The default for `steam-manager config`.                              |
+| `config get <key>`                  | Print the effective value at a dotted key (factory + user merged). Exit 3 if missing.                   |
 | `config set <key> <value>`          | Set a dotted key. Type inference: `true`/`false` → bool, digits → int, else string.                     |
 | `config unset <key>`                | Remove a dotted key. Drops the parent table if it becomes empty.                                        |
-| `config ignore <appid>`             | Shortcut for `[overrides.<appid>] ignore = true`. Validates that `<appid>` is numeric.                  |
+| `config wizard`                     | Explicit form of the default. Interactive picker-based flow; see the table below.                       |
+| `config path`                       | Print the user policy file path. Useful for `cat $(steam-manager config path)` or `$EDITOR $(...)`.     |
 
-When the user file is created (via `edit` or `reset`), it is seeded with the bundled factory `policies.toml`, every line pre-commented. Uncomment only what you want to override; commented lines continue to track future factory updates.
+Dropped sub-commands (covered by the wizard or by external tools):
+
+- `config show` → wizard entry "Show current configuration".
+- `config edit` → `$EDITOR $(steam-manager config path)`.
+- `config reset` → wizard entry "Reset to defaults", or `rm $(steam-manager config path)`.
+- `config ignore <appid>` → wizard entry "Toggle ignore list", or `config set overrides.<appid>.ignore true`.
+
+#### `config wizard` flow
+
+The wizard is a flat menu of granular actions — every entry takes you directly to the relevant picker, with no intermediate "scope / target" cascade. Each iteration:
+
+1. **Pick an action** from the main menu (see table below).
+2. **A breadcrumb header** shows `Editing: <setting> — [<scope>]` and the current value, so the picker always has context.
+3. **The picker** opens grouped by source where it makes sense (compat tool → `── Custom ── / ── Official ── / ── Special ──`; launch options → `── Templates ── / ── Special ──`). The cursor is pre-positioned on the current value.
+4. **A yellow diff table** lists the pending changes (key / from / to).
+5. **`Apply changes? Y/n`** — discarding leaves the file untouched.
+6. **Loops** back to the menu.
+
+The current-configuration table is **not** rendered automatically; it's behind the explicit "Show current configuration" menu entry so the default screen is just the menu.
+
+| Menu entry                                | What it does                                                                                                                  |
+|-------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
+| Change Proton (default for all games)     | Writes `games.compat_tool`. Picker grouped by source.                                                                         |
+| Change Proton (for one game)              | Asks which installed game, then writes `overrides.<appid>.compat_tool`.                                                       |
+| Change launch options (default…)          | Writes `games.launch_options` from a template list or freeform input.                                                         |
+| Change launch options (for one game)      | Asks which game, then writes `overrides.<appid>.launch_options`.                                                              |
+| Toggle ignore list                        | Multi-select over installed games; pre-checked = currently ignored. Diffs the two sets and emits add/remove changes.          |
+| Set target users                          | Multi-select with `active`/`*` sentinels and every account from `loginusers.vdf`. Writes `general.target_users`.              |
+| Set max backups                           | Integer prompt (≥ 1). Writes `general.max_backups`.                                                                           |
+| Show current configuration                | Renders the full effective config as a sectioned table. No write.                                                             |
+| Reset to defaults                         | Deletes `~/.config/steam-manager/policies.toml` after explicit confirmation. Same as `config reset --yes`.                    |
+
+Non-runnable compat tools — Steam Linux Runtime layers (`scout_ldlp` / "Legacy runtime") and Proton sub-runtimes invoked internally for anti-cheat ("Proton EasyAntiCheat Runtime", "Proton BattlEye Runtime") — are filtered out of the picker. They're installed on disk but selecting them as a game's compat_tool is never what you want.
 
 Dotted keys: `games.compat_tool`, `general.max_backups`, `overrides.1495710.ignore`. Keys containing literal `.` are not supported.
 
@@ -140,6 +170,11 @@ Editor selection: `$EDITOR` if set, else `vi`/`nano`/`nvim` (in order) if on PAT
 | `--all-users`        | Apply to every local account.                               |
 | `--appid &lt;id&gt;`       | Restrict to a single AppID (diff/apply only).               |
 | `--force`            | Bypass the Steam-running check on writing commands.         |
+
+`shortcuts edit` accepts `--user` and `--force` only (no `--all-users`,
+no `--appid` — the shortcuts file is inherently per-account). `scopebuddy
+init` accepts `--missing` (init every game lacking a stub) and `--force`
+(overwrite existing stubs).
 
 CLI flags override `[general] target_users` from `policies.toml`. `--user`
 and `--all-users` are mutually exclusive.
@@ -222,11 +257,11 @@ remain.
 | `STEAM_MANAGER_FORCE=1`        | Equivalent to passing `--force` (bypasses the Steam-running check).     |
 | `STEAM_MANAGER_INSTALL_DIR`    | Used by `scripts/install.sh` to override the default `~/.local/bin`.    |
 | `STEAM_MANAGER_VERSION`        | Used by `scripts/install.sh` to pin to a specific release tag.          |
-| `STEAM_MANAGER_USER_POLICY`    | Override the path written by `config edit`/`set`/`unset`/`ignore`.      |
+| `STEAM_MANAGER_USER_POLICY`    | Override the path written by `config set`/`unset` and the wizard.       |
 | `STEAM_MANAGER_NO_UPDATE_NOTIFIER` | Silence the post-command "new release available" hint (any value).  |
 | `STEAM_MANAGER_UPDATE_REPO`    | Override the GitHub repo (`MatrixDJ96/steam-manager`) for `update`.     |
 | `STEAM_MANAGER_UPDATE_STATE`   | Override the notifier's cache file path (testing convenience).          |
 | `STEAM_MANAGER_QUIET=1`        | Read by `scripts/install.sh`: silence the PATH banner + "try it" line. Set by `steam-manager update` so the installer's output stays focused on download/verify/install. |
 | `CI`                           | When set (any value), suppresses the update notifier.                   |
-| `EDITOR`                       | Editor command used by `config edit` / `shortcuts edit` (fallback: `vi`/`nano`/`nvim`). |
+| `EDITOR`                       | Editor command used by `shortcuts edit` (fallback: `vi`/`nano`/`nvim`).                 |
 | `NO_COLOR=1`                   | Disable colors and bold/dim emphasis (rich honors the standard).        |
