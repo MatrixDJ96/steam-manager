@@ -1,6 +1,12 @@
-"""Read/write of per-user `localconfig.vdf` — holds launch options per app."""
+"""Read/write of per-user `localconfig.vdf` — holds launch options per app.
+
+Writes go through `_atomic_write_vdf` (tmp file + `os.replace`) for the same
+reason as `io/config_vdf.py`: a partial write leaves Steam unable to load
+the file and the user loses every launch option set for that account.
+"""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import vdf
@@ -11,6 +17,14 @@ from steam_manager.models import SteamUser
 
 def _localconfig_path(user: SteamUser) -> Path:
     return user.userdata_dir / "config" / "localconfig.vdf"
+
+
+def _atomic_write_vdf(path: Path, data: dict) -> None:
+    """Atomic VDF text write: serialize to a sibling `.tmp`, then rename."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as f:
+        vdf.dump(data, f, pretty=True)
+    os.replace(tmp, path)
 
 
 def _load_apps_section(user: SteamUser) -> tuple[dict, dict]:
@@ -50,8 +64,16 @@ def set_launch_options(user: SteamUser, appid: str, opts: str) -> None:
         entry = {}
     entry["LaunchOptions"] = opts
     apps[appid] = entry
-    with _localconfig_path(user).open("w", encoding="utf-8") as f:
-        vdf.dump(data, f, pretty=True)
+    _atomic_write_vdf(_localconfig_path(user), data)
+
+
+def count_launch_options(user: SteamUser) -> int:
+    """Number of apps in this user's localconfig with a non-empty LaunchOptions."""
+    _, apps = _load_apps_section(user)
+    return sum(
+        1 for entry in apps.values()
+        if isinstance(entry, dict) and "LaunchOptions" in entry
+    )
 
 
 def load_apps_section_from_file(path: Path) -> dict[str, dict]:
@@ -89,6 +111,5 @@ def clear_all_launch_options(user: SteamUser) -> list[str]:
             del entry["LaunchOptions"]
             removed.append(appid)
     if removed:
-        with _localconfig_path(user).open("w", encoding="utf-8") as f:
-            vdf.dump(data, f, pretty=True)
+        _atomic_write_vdf(_localconfig_path(user), data)
     return removed

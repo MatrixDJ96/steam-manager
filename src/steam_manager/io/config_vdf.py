@@ -1,6 +1,16 @@
-"""Read/write of `config.vdf` — Steam's global config holding compat-tool mappings."""
+"""Read/write of `config.vdf` — Steam's global config holding compat-tool mappings.
+
+Writes go through `_atomic_write_vdf` (tmp file + `os.replace`) so a crash
+mid-write can never leave a half-written `config.vdf` on disk. Steam refuses
+to load a corrupt config and silently drops the entire compat-tool map; the
+atomic write is the only thing that prevents that failure mode. The atomic
+replace also protects against a symlinked target — `os.replace` replaces the
+directory entry, it doesn't follow the symlink to overwrite an attacker-
+controlled file.
+"""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import vdf
@@ -11,6 +21,14 @@ from steam_manager.models import SteamContext
 
 def _config_vdf_path(ctx: SteamContext) -> Path:
     return ctx.root / "config" / "config.vdf"
+
+
+def _atomic_write_vdf(path: Path, data: dict) -> None:
+    """Atomic VDF text write: serialize to a sibling `.tmp`, then rename."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as f:
+        vdf.dump(data, f, pretty=True)
+    os.replace(tmp, path)
 
 
 def _load_compat_map(ctx: SteamContext) -> tuple[dict, dict]:
@@ -52,8 +70,13 @@ def set_compat_tool(ctx: SteamContext, appid: str, name: str) -> None:
     existing.update({"name": name, "config": existing.get("config", ""),
                      "priority": existing.get("priority", "250")})
     mapping[appid] = existing
-    with _config_vdf_path(ctx).open("w", encoding="utf-8") as f:
-        vdf.dump(data, f, pretty=True)
+    _atomic_write_vdf(_config_vdf_path(ctx), data)
+
+
+def count_compat_overrides(ctx: SteamContext) -> int:
+    """Number of per-appid compat tool overrides (excluding Steam's default '0' entry)."""
+    _, mapping = _load_compat_map(ctx)
+    return sum(1 for k in mapping if k != "0")
 
 
 def load_compat_map_from_file(path: Path) -> dict[str, dict]:
@@ -88,6 +111,5 @@ def clear_all_compat(ctx: SteamContext) -> list[str]:
     for k in removed:
         del mapping[k]
     if removed:
-        with _config_vdf_path(ctx).open("w", encoding="utf-8") as f:
-            vdf.dump(data, f, pretty=True)
+        _atomic_write_vdf(_config_vdf_path(ctx), data)
     return removed
