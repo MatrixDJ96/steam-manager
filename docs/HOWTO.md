@@ -215,12 +215,12 @@ disables it (don't unless you know what you're doing).
 ## Generate ScopeBuddy stubs for every game with `scopebuddy --` in its launch options
 
 ```bash
-steam-manager scb               # see which games are missing a stub
-steam-manager scb init --missing
+steam-manager scopebuddy        # see which games are missing a stub (alias: scb)
+steam-manager scopebuddy init --missing
 ```
 
 The stub is intentionally minimal — two comment lines — so you can fill it
-in by hand later. Run `steam-manager scb` again to verify nothing is
+in by hand later. Run `steam-manager scopebuddy` again to verify nothing is
 missing.
 
 ## Pin to a specific release when installing on a new machine

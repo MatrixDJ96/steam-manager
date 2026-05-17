@@ -39,7 +39,7 @@ def install_rich_click(app):
             {"name": "Commands", "commands": [
                 "list", "diff", "apply", "backup", "restore",
             ]},
-            {"name": "Extras", "commands": ["open", "clear", "scb", "shortcuts", "update"]},
+            {"name": "Extras", "commands": ["open", "clear", "scopebuddy", "shortcuts", "update"]},
         ],
     }
 

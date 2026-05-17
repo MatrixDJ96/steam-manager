@@ -105,8 +105,8 @@ steam-manager restore          # interactive picker
 ### ScopeBuddy helpers
 
 ```bash
-steam-manager scb              # find missing or orphan configs
-steam-manager scb init         # generate missing stubs
+steam-manager scopebuddy       # find missing or orphan configs (alias: scb)
+steam-manager scopebuddy init  # generate missing stubs
 ```
 
 ### Non-Steam shortcuts

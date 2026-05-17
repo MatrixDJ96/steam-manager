@@ -101,7 +101,7 @@ this with AST inspection.
 │       ├── restore_cmd.py           # `restore`
 │       ├── config_cmd.py            # `config` sub-typer (path/show/edit/get/set/...)
 │       ├── shortcuts_cmd.py         # `shortcuts` sub-typer (path/show/edit)
-│       └── scb_cmd.py               # `scb` sub-typer (observe/init)
+│       └── scopebuddy_cmd.py        # `scopebuddy` sub-typer for per-game ScopeBuddy stubs (observe/init)
 ├── tests/
 │   ├── fixtures/                    # synthetic VDF + TOML fixtures
 │   ├── conftest.py                  # fake_steam fixture
@@ -175,7 +175,7 @@ through `io/_vdf_util.ci_get()`.
 
 Each top-level command (`list`, `diff`, `apply`, `clear`, `open`, `backup`,
 `restore`) lives in its own `<verb>_cmd.py`. Each sub-typer family (`config`,
-`shortcuts`, `scb`) lives in `<name>_cmd.py`. The Typer app singleton is in
+`shortcuts`, `scopebuddy`) lives in `<name>_cmd.py`. The Typer app singleton is in
 `cli/app.py`; everything is wired in `cli/__init__.py` via side-effect
 imports.
 
@@ -200,7 +200,7 @@ Shared CLI helpers (private to the cli/ layer):
   `STEAM_RUNNING` when Steam is alive and `--force` isn't set.
 - **`_appinfo.py`** — `appinfo_types()` with `@lru_cache`, `is_listable`,
   `NON_GAME_NAME_PREFIXES`. The "what counts as a game" filter shared by
-  list/diff/apply/scb.
+  list/diff/apply/scopebuddy.
 - **`_drift.py`** — `compute_drift(ctx, apps, users, engine, target_spec)`:
   the diff between on-disk state and resolved policy. Used by `list` (to
   mark drifting rows bold), `diff` (read-only preview), and `apply` (which

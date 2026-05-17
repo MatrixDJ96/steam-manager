@@ -1,10 +1,10 @@
-"""`steam-manager scb` — observe and init ScopeBuddy per-game configs.
+"""`steam-manager scopebuddy` — observe and init ScopeBuddy per-game configs.
 
 ScopeBuddy is an external tool with per-game `.conf` files under
 `~/.config/scopebuddy/games/steam/<appid>.conf`. This sub-typer reports
-missing/orphan configs (`scb observe`, default action) and seeds new
-stubs (`scb init`). The `scopebuddy` hidden alias is registered for
-backward compatibility — `scb` is the canonical name.
+missing/orphan configs (`scopebuddy observe`, default action) and seeds
+new stubs (`scopebuddy init`). The `scb` hidden alias is registered as a
+short shortcut — `scopebuddy` is the canonical name.
 """
 from __future__ import annotations
 
@@ -32,10 +32,10 @@ def _scb_dir() -> Path:
     return Path.home() / ".config" / "scopebuddy" / "games" / "steam"
 
 
-scb_app = typer.Typer(help="ScopeBuddy: observe + init of base configs.")
+scopebuddy_app = typer.Typer(help="ScopeBuddy: observe + init of base configs.")
 
 
-@scb_app.callback(invoke_without_command=True)
+@scopebuddy_app.callback(invoke_without_command=True)
 def scb_default(
     ctx: typer.Context,
     user: str | None = typer.Option(
@@ -51,7 +51,7 @@ def scb_default(
         _scb_observe(user=user, all_users=all_users)
 
 
-@scb_app.command("observe")
+@scopebuddy_app.command("observe")
 def scb_observe_cmd(
     user: str | None = typer.Option(
         None, "--user",
@@ -140,7 +140,7 @@ def _scb_observe(user: str | None = None, all_users: bool = False):
     raise typer.Exit(ExitCode.DRIFT if issues else ExitCode.OK)
 
 
-@scb_app.command("init")
+@scopebuddy_app.command("init")
 def scb_init_cmd(
     appid: str | None = typer.Argument(None),
     missing: bool = typer.Option(False, "--missing", help="Init all missing configs"),

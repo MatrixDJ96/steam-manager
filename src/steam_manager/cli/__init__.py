@@ -52,15 +52,14 @@ from steam_manager.cli import (  # noqa: E402, F401  side-effect imports
 
 # --- Register sub-typer families -------------------------------------------
 from steam_manager.cli.config_cmd import config_app  # noqa: E402
-from steam_manager.cli.scb_cmd import scb_app  # noqa: E402
+from steam_manager.cli.scopebuddy_cmd import scopebuddy_app  # noqa: E402
 from steam_manager.cli.shortcuts_cmd import shortcuts_app  # noqa: E402
 
 app.add_typer(config_app, name="config", rich_help_panel="Extras")
 app.add_typer(shortcuts_app, name="shortcuts", rich_help_panel="Extras")
-# `scb` is the canonical name; `scopebuddy` is a hidden alias kept for
-# backward compatibility but not shown in `--help`.
-app.add_typer(scb_app, name="scb", rich_help_panel="Extras")
-app.add_typer(scb_app, name="scopebuddy", hidden=True)
+# `scopebuddy` is the canonical name; `scb` is a short hidden alias.
+app.add_typer(scopebuddy_app, name="scopebuddy", rich_help_panel="Extras")
+app.add_typer(scopebuddy_app, name="scb", hidden=True)
 
 
 def main() -> None:

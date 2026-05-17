@@ -71,7 +71,7 @@ filters out common non-game patterns (soundtracks, OSTs, etc.).
 | `restore`            | Restore from a previous checkpoint. Interactive single-select or `--last`. Aborts if Steam is running. |
 | `open &lt;appid&gt;`       | Open the game's install folder (or `--compat` for compatdata) via `xdg-open`. |
 | `clear`              | Wipe ALL compat tool overrides + launch options for every app (no type filter). Auto-backup. |
-| `scb` / `scopebuddy` | ScopeBuddy: `observe` (default) + `init` (per AppID, `--missing`, interactive). |
+| `scopebuddy` / `scb` | ScopeBuddy: `observe` (default) + `init` (per AppID, `--missing`, interactive). `scb` is a short hidden alias. |
 | `update`             | Self-update the binary to the latest GitHub release. `--check` (read-only), `--yes` (skip prompt), `--force` (reinstall same version). PyInstaller-only. |
 | `shortcuts`          | Edit Steam's binary `shortcuts.vdf` (non-Steam games). `path`, `show`, `edit`. |
 
@@ -107,7 +107,7 @@ Editor selection: `$EDITOR` if set, else `vi`/`nano`/`nvim` (in order) if on PAT
 
 ### Shared user filters
 
-`diff`, `apply`, `list`, `scb`, and `clear` accept these filters:
+`diff`, `apply`, `list`, `scopebuddy`, and `clear` accept these filters:
 
 | Flag                 | Effect                                                      |
 |----------------------|-------------------------------------------------------------|
@@ -124,7 +124,7 @@ and `--all-users` are mutually exclusive.
 | Code | Meaning                                              |
 |------|------------------------------------------------------|
 | 0    | OK / no drift                                        |
-| 1    | Drift detected (`diff`) or ScopeBuddy issues (`scb`) |
+| 1    | Drift detected or ScopeBuddy issues                  |
 | 2    | Steam is running, aborted                            |
 | 3    | Config parse error or mutually-exclusive flags       |
 | 4    | Write error (reserved for rollback path)             |
