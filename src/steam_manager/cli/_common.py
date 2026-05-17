@@ -16,6 +16,8 @@ from enum import IntEnum
 from importlib.resources import files
 from pathlib import Path
 
+from steam_manager.io.policies_toml import user_path as _user_path
+
 
 class ExitCode(IntEnum):
     OK = 0
@@ -38,12 +40,15 @@ def policy_paths() -> list[Path]:
     """Resolve the layered policy paths: factory + user override.
 
     STEAM_MANAGER_POLICY_PATHS (colon-separated) overrides both for tests.
+    Falls back to the env-aware `policies_toml.user_path()` so a test that
+    redirects only the user file via STEAM_MANAGER_USER_POLICY still sees
+    the redirect through this helper.
     """
     override = os.environ.get("STEAM_MANAGER_POLICY_PATHS")
     if override:
         return [Path(p) for p in override.split(":") if p]
     factory = Path(str(files("steam_manager").joinpath("policies.toml")))
-    return [factory, USER_POLICY_PATH]
+    return [factory, _user_path()]
 
 
 def backup_root() -> Path:

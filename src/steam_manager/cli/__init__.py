@@ -13,7 +13,7 @@ Dependency rules (see CLAUDE.md / docs/ARCHITECTURE.md):
 """
 from __future__ import annotations
 
-from steam_manager.cli._common import (  # re-export for tests + backward compat
+from steam_manager.cli._common import (  # re-exports for callers/tests
     ExitCode,
     USER_POLICY_PATH,
     backup_root,
@@ -24,14 +24,6 @@ from steam_manager.cli._common import (  # re-export for tests + backward compat
 )
 from steam_manager.cli._rich import install_rich_click
 from steam_manager.cli.app import app
-
-# Backward-compat underscore aliases. Tests and (until step 10) some
-# sibling modules still import `_steam_root`, `_backup_root`, etc. directly
-# from `steam_manager.cli`. These aliases keep those callers working.
-_steam_root = steam_root
-_policy_paths = policy_paths
-_backup_root = backup_root
-_iso_timestamp = iso_timestamp
 
 
 # --- Register top-level commands by importing their modules -----------------

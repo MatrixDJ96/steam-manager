@@ -13,7 +13,7 @@ from pathlib import Path
 
 import typer
 
-from steam_manager import policy, render, steam
+from steam_manager import policy, render
 from steam_manager.cli import _appinfo
 from steam_manager.cli._appinfo import is_listable
 from steam_manager.cli._common import ExitCode, policy_paths, steam_root
@@ -22,6 +22,7 @@ from steam_manager.cli._targets import (
     resolve_target_users,
     target_users_banner,
 )
+from steam_manager.io import discovery, localconfig_vdf
 from steam_manager.io import scopebuddy as scb_mod
 
 
@@ -67,9 +68,9 @@ def scb_observe_cmd(
 
 
 def _scb_observe(user: str | None = None, all_users: bool = False):
-    ctx = steam.discover(steam_root=steam_root())
-    apps = steam.list_apps(ctx)
-    users = steam.list_users(ctx)
+    ctx = discovery.discover(steam_root=steam_root())
+    apps = discovery.list_apps(ctx)
+    users = discovery.list_users(ctx)
     engine = policy.load(policy_paths())
 
     target_spec = effective_target_spec(engine.target_users, user, all_users)
@@ -83,7 +84,7 @@ def _scb_observe(user: str | None = None, all_users: bool = False):
     primary = targets[0]
     types = _appinfo.appinfo_types()
     games = [a for a in apps if a.installed and is_listable(a, types)]
-    launch = {a.appid: steam.get_launch_options(primary, a.appid) for a in games}
+    launch = {a.appid: localconfig_vdf.get_launch_options(primary, a.appid) for a in games}
     installed_ids = [a.appid for a in games]
     by_id = {a.appid: a for a in games}
 
@@ -155,8 +156,8 @@ def scb_init_cmd(
     ),
 ):
     """Create L1 stub for one or more games."""
-    ctx = steam.discover(steam_root=steam_root())
-    apps = steam.list_apps(ctx)
+    ctx = discovery.discover(steam_root=steam_root())
+    apps = discovery.list_apps(ctx)
     types = _appinfo.appinfo_types()
     games = [a for a in apps if a.installed and is_listable(a, types)]
     by_id = {a.appid: a for a in games}
@@ -164,7 +165,7 @@ def scb_init_cmd(
     if appid:
         targets = [appid]
     elif missing:
-        users_list = steam.list_users(ctx)
+        users_list = discovery.list_users(ctx)
         engine = policy.load(policy_paths())
         target_spec = effective_target_spec(engine.target_users, user, all_users)
         target_users = resolve_target_users(users_list, target_spec)
@@ -172,7 +173,7 @@ def scb_init_cmd(
             render.error(f"No user matches {target_spec!r}.")
             raise typer.Exit(ExitCode.PARSE_ERROR)
         primary = target_users[0]
-        launch = {a.appid: steam.get_launch_options(primary, a.appid) for a in games}
+        launch = {a.appid: localconfig_vdf.get_launch_options(primary, a.appid) for a in games}
         obs = scb_mod.observe(_scb_dir(), list(by_id.keys()), launch)
         targets = obs.missing_configs
     else:

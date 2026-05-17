@@ -6,7 +6,7 @@ import json as _json
 import typer
 from rich.console import Console
 
-from steam_manager import policy, render, steam
+from steam_manager import policy, render
 from steam_manager.cli.app import app
 from steam_manager.cli import _appinfo
 from steam_manager.cli._appinfo import is_listable
@@ -17,6 +17,7 @@ from steam_manager.cli._targets import (
     resolve_target_users,
     target_users_banner,
 )
+from steam_manager.io import config_vdf, discovery, localconfig_vdf
 
 
 @app.command(name="list")
@@ -32,12 +33,12 @@ def list_cmd(
     json_out: bool = typer.Option(False, "--json", help="Output JSON instead of table"),
 ):
     """List all installed games with compat tool and per-user launch options."""
-    ctx = steam.discover(steam_root=steam_root())
-    apps = sorted(steam.list_apps(ctx), key=lambda a: a.name.lower())
+    ctx = discovery.discover(steam_root=steam_root())
+    apps = sorted(discovery.list_apps(ctx), key=lambda a: a.name.lower())
     types = _appinfo.appinfo_types()
     listable = [a for a in apps if a.installed and is_listable(a, types)]
 
-    users_list = steam.list_users(ctx)
+    users_list = discovery.list_users(ctx)
     engine = policy.load(policy_paths())
     target_spec = effective_target_spec(engine.target_users, user, all_users)
     target_users = resolve_target_users(users_list, target_spec)
@@ -48,11 +49,11 @@ def list_cmd(
             entry = {
                 "appid": a.appid,
                 "name": a.name,
-                "library": steam.library_label(ctx, a.library),
+                "library": discovery.library_label(ctx, a.library),
                 "library_path": str(a.library),
-                "compat_tool": steam.get_compat_tool(ctx, a.appid),
+                "compat_tool": config_vdf.get_compat_tool(ctx, a.appid),
                 "launch_options": {
-                    u.account_name: steam.get_launch_options(u, a.appid)
+                    u.account_name: localconfig_vdf.get_launch_options(u, a.appid)
                     for u in target_users
                 },
             }
@@ -81,12 +82,12 @@ def list_cmd(
     drift_appids = {c["appid"] for c in drift_changes}
 
     for a in listable:
-        compat = steam.get_compat_tool(ctx, a.appid) or "[dim]<none>[/dim]"
+        compat = config_vdf.get_compat_tool(ctx, a.appid) or "[dim]<none>[/dim]"
         appid_cell = render.link_cell(str(a.compatdata_path), a.appid)
         name_cell = render.link_cell(str(a.install_path), a.name)
         row = [appid_cell, name_cell, compat]
         for u in target_users:
-            lo = steam.get_launch_options(u, a.appid) or "[dim]<none>[/dim]"
+            lo = localconfig_vdf.get_launch_options(u, a.appid) or "[dim]<none>[/dim]"
             row.append(lo)
         row_style = "bold" if a.appid in drift_appids else "dim"
         table.add_row(*row, style=row_style)

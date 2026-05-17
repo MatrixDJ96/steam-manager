@@ -5,9 +5,10 @@ import subprocess
 
 import typer
 
-from steam_manager import render, steam
+from steam_manager import render
 from steam_manager.cli._common import ExitCode, steam_root
 from steam_manager.cli.app import app
+from steam_manager.io import discovery
 
 
 @app.command(name="open")
@@ -19,8 +20,8 @@ def open_cmd(
     ),
 ):
     """Open a game's install folder (or compatdata with --compat) via xdg-open."""
-    ctx = steam.discover(steam_root=steam_root())
-    apps = steam.list_apps(ctx)
+    ctx = discovery.discover(steam_root=steam_root())
+    apps = discovery.list_apps(ctx)
     by_id = {a.appid: a for a in apps}
     if appid not in by_id:
         render.error(f"AppID [bold]{appid}[/bold] not installed.")

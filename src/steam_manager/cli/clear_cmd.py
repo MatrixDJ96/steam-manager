@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import typer
 
-from steam_manager import policy, render, steam
+from steam_manager import policy, render
 from steam_manager.cli._checkpoint import build_steam_files, make_checkpoint
 from steam_manager.cli._common import ExitCode, policy_paths, steam_root
 from steam_manager.cli._steam_guard import check_steam_closed
@@ -13,6 +13,7 @@ from steam_manager.cli._targets import (
     target_users_banner,
 )
 from steam_manager.cli.app import app
+from steam_manager.io import config_vdf, discovery, localconfig_vdf
 
 
 @app.command(name="clear")
@@ -35,25 +36,17 @@ def clear_cmd(
     so the operation is reversible via `steam-manager restore`."""
     check_steam_closed(force)
 
-    ctx = steam.discover(steam_root=steam_root())
-    users_list = steam.list_users(ctx)
+    ctx = discovery.discover(steam_root=steam_root())
+    users_list = discovery.list_users(ctx)
     engine = policy.load(policy_paths())
     target_spec = effective_target_spec(engine.target_users, user, all_users)
     target_users = resolve_target_users(users_list, target_spec)
 
     render.info(target_users_banner(users_list, target_spec))
 
-    # Plan summary (read-only count so the user knows what's at stake)
-    _, compat_map = steam._load_compat_map(ctx)
-    compat_count = len([k for k in compat_map.keys() if k != "0"])
-    launch_plan: list[tuple[steam.SteamUser, int]] = []
-    for u in target_users:
-        _, apps_section = steam._load_apps_section(u)
-        n = sum(
-            1 for entry in apps_section.values()
-            if isinstance(entry, dict) and "LaunchOptions" in entry
-        )
-        launch_plan.append((u, n))
+    # Plan summary (read-only counts so the user knows what's at stake)
+    compat_count = config_vdf.count_compat_overrides(ctx)
+    launch_plan = [(u, localconfig_vdf.count_launch_options(u)) for u in target_users]
     launch_total = sum(n for _, n in launch_plan)
 
     if compat_count == 0 and launch_total == 0:
@@ -88,7 +81,7 @@ def clear_cmd(
         f"([bold]{len(files)}[/bold] files, [dim]{size_kb:.1f} KB[/dim])"
     )
 
-    removed_compat = steam.clear_all_compat(ctx)
+    removed_compat = config_vdf.clear_all_compat(ctx)
     if removed_compat:
         render.success(
             f"Cleared [bold]{len(removed_compat)}[/bold] compat tool overrides "
@@ -96,7 +89,7 @@ def clear_cmd(
         )
 
     for u in target_users:
-        removed = steam.clear_all_launch_options(u)
+        removed = localconfig_vdf.clear_all_launch_options(u)
         if removed:
             render.success(
                 f"Cleared [bold]{len(removed)}[/bold] launch options "

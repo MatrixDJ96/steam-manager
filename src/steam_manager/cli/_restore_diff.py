@@ -19,8 +19,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from steam_manager import steam
-from steam_manager.io import backups, config_vdf, localconfig_vdf
+from steam_manager.io import backups, config_vdf, discovery, localconfig_vdf
 from steam_manager.models import SteamContext, SteamUser
 
 
@@ -54,7 +53,7 @@ def compute_restore_diff(
     `users` are skipped silently.
     """
     changes: list[dict] = []
-    apps_by_id = {a.appid: a for a in steam.list_apps(ctx)}
+    apps_by_id = {a.appid: a for a in discovery.list_apps(ctx)}
     user_by_name = {u.account_name: u for u in users}
 
     with tempfile.TemporaryDirectory(prefix="sm-restore-diff-") as tmp:

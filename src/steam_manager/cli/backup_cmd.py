@@ -3,17 +3,18 @@ from __future__ import annotations
 
 import typer
 
-from steam_manager import policy, render, steam
+from steam_manager import policy, render
 from steam_manager.cli._checkpoint import build_steam_files, make_checkpoint
 from steam_manager.cli._common import ExitCode, policy_paths, steam_root
 from steam_manager.cli.app import app
+from steam_manager.io import discovery
 
 
 @app.command()
 def backup():
     """Create a full checkpoint archive (config.vdf + every user's localconfig.vdf)."""
-    ctx = steam.discover(steam_root=steam_root())
-    users = steam.list_users(ctx)
+    ctx = discovery.discover(steam_root=steam_root())
+    users = discovery.list_users(ctx)
     engine = policy.load(policy_paths())
 
     files, user_entries = build_steam_files(ctx, users)

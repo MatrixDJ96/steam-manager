@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import typer
 
-from steam_manager import policy, render, steam
+from steam_manager import policy, render
 from steam_manager.cli._common import ExitCode, policy_paths, steam_root
 from steam_manager.cli._drift import compute_drift
 from steam_manager.cli._targets import effective_target_spec, target_users_banner
 from steam_manager.cli.app import app
+from steam_manager.io import discovery
 
 
 @app.command()
@@ -26,9 +27,9 @@ def diff(
     ),
 ):
     """Show changes that `apply` would make (read-only)."""
-    ctx = steam.discover(steam_root=steam_root())
-    apps = steam.list_apps(ctx)
-    users = steam.list_users(ctx)
+    ctx = discovery.discover(steam_root=steam_root())
+    apps = discovery.list_apps(ctx)
+    users = discovery.list_users(ctx)
     engine = policy.load(policy_paths())
 
     target_spec = effective_target_spec(engine.target_users, user, all_users)

@@ -7,10 +7,11 @@ keep it stable.
 """
 from __future__ import annotations
 
-from steam_manager import policy, steam
+from steam_manager import policy
 from steam_manager.cli import _appinfo
-from steam_manager.cli._appinfo import NON_GAME_NAME_PREFIXES
+from steam_manager.cli._appinfo import is_listable
 from steam_manager.cli._targets import resolve_target_users
+from steam_manager.io import config_vdf, localconfig_vdf
 from steam_manager.models import SteamApp, SteamContext, SteamUser
 
 
@@ -35,18 +36,22 @@ def compute_drift(
     for app in apps:
         if not app.installed:
             continue
+        # `is_listable` already covers both the app-type filter (drops
+        # dlc/music/tool/...) and the NON_GAME_NAME_PREFIXES guard
+        # (drops Proton, Steam Linux Runtime, ...). Single source of
+        # truth — don't re-check pieces of it here.
+        if not is_listable(app, types):
+            continue
         app_type = types.get(app.appid)
         pol = policy.resolve(engine, app.appid, app_type)
         if pol is None or pol.ignore:
-            continue
-        if any(app.name.startswith(p) for p in NON_GAME_NAME_PREFIXES):
             continue
 
         compatdata_path = str(app.compatdata_path)
         install_path = str(app.install_path)
 
         if pol.compat_tool:
-            current_compat = steam.get_compat_tool(ctx, app.appid)
+            current_compat = config_vdf.get_compat_tool(ctx, app.appid)
             if current_compat != pol.compat_tool:
                 changes.append({
                     "appid": app.appid, "name": app.name,
@@ -58,7 +63,7 @@ def compute_drift(
 
         if pol.launch_options:
             for user in targets:
-                current_launch = steam.get_launch_options(user, app.appid)
+                current_launch = localconfig_vdf.get_launch_options(user, app.appid)
                 if current_launch != pol.launch_options:
                     changes.append({
                         "appid": app.appid, "name": app.name,
