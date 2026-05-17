@@ -42,6 +42,13 @@ def install_rich_click(app):
             {"name": "Steam tools", "commands": ["scopebuddy", "shortcuts", "open"]},
             {"name": "Manage", "commands": ["config", "update"]},
         ],
+        # Force the order of `steam-manager config --help` sub-commands —
+        # rich-click sorts alphabetically by default; we want the
+        # primitives in dotted-key intuitive order with `wizard` last.
+        "steam-manager config": [
+            {"name": "Commands",
+             "commands": ["get", "set", "unset", "wizard", "path"]},
+        ],
     }
 
     rich_click.rich_click.PADDING_ERRORS_SUGGESTION = (0, 1, 1, 1)
