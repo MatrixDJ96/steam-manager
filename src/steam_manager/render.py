@@ -282,8 +282,64 @@ def select_items_interactive(prompt: str, choices: list[tuple[str, str]]) -> lis
     return questionary.checkbox(prompt, choices=qchoices).ask() or []
 
 
-def select_one_interactive(prompt: str, choices: list[tuple[str, str]]) -> str | None:
-    """Single-select via questionary radio. choices: list of (label, value).
-    Returns the selected value, or None if cancelled."""
-    qchoices = [questionary.Choice(title=label, value=value) for label, value in choices]
-    return questionary.select(prompt, choices=qchoices).ask()
+def select_one_interactive(prompt: str, choices: list, default: str | None = None) -> str | None:
+    """Single-select via questionary radio.
+
+    Each element of `choices` is one of:
+    - `(label, value)` — plain text choice
+    - `None` — inserts a blank `questionary.Separator` (visual gap)
+    - `questionary.Separator(line)` — passed through; use for titled
+      group dividers like `Separator("── Custom ──")`
+    - `questionary.Choice(...)` — passed through verbatim, useful for
+      formatted titles (`title=[(style, text), ...]`) that render colours
+      and dim/bold inside the picker.
+
+    `default` pre-positions the cursor on the choice whose value matches.
+
+    Returns the selected value, or None if cancelled.
+    """
+    qchoices: list = []
+    for item in choices:
+        if item is None:
+            qchoices.append(questionary.Separator())
+        elif isinstance(item, (questionary.Choice, questionary.Separator)):
+            qchoices.append(item)
+        else:
+            label, value = item
+            qchoices.append(questionary.Choice(title=label, value=value))
+    return questionary.select(prompt, choices=qchoices, default=default).ask()
+
+
+def prompt_text(message: str, default: str = "") -> str | None:
+    """Free-form text input via questionary. Returns None if cancelled (Ctrl-C)."""
+    return questionary.text(message, default=default).ask()
+
+
+def confirm(message: str, default: bool = True) -> bool:
+    """Yes/No prompt via questionary. Returns `default` if cancelled (Ctrl-C),
+    so callers can rely on the result being a bool without further guards."""
+    result = questionary.confirm(message, default=default).ask()
+    if result is None:
+        return False
+    return bool(result)
+
+
+def prompt_int(message: str, default: int | None = None, minimum: int = 1) -> int | None:
+    """Integer input with bounds validation. Returns None if cancelled."""
+    def _validate(s: str) -> bool | str:
+        s = s.strip()
+        if not s:
+            return "Required."
+        try:
+            v = int(s)
+        except ValueError:
+            return "Must be an integer."
+        if v < minimum:
+            return f"Must be ≥ {minimum}."
+        return True
+
+    default_str = str(default) if default is not None else ""
+    result = questionary.text(message, default=default_str, validate=_validate).ask()
+    if result is None:
+        return None
+    return int(result.strip())
