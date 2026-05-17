@@ -25,6 +25,9 @@ modifies game files or `appmanifest_*.acf`.
   talk to Steam's web services.
 - Not a Pyroveil manager. Per-game shader/runtime hacks live in
   `~/.pyroveil/` and stay out of scope.
+- Does not resolve or validate Proton names. The `compat_tool` value is
+  written to Steam verbatim; Steam silently ignores an unrecognized name, so
+  policies carry the *tech name* (e.g. `proton-cachyos-slr`).
 - Does not write `appmanifest_*.acf`. Those files are parsed only to
   enumerate installed apps.
 
@@ -51,6 +54,7 @@ modifies game files or `appmanifest_*.acf`.
 │   │   ├── shortcuts_vdf.py         # binary VDF R/W on shortcuts.vdf
 │   │   ├── policies_toml.py         # user policy file R/W (tomlkit-based)
 │   │   ├── appinfo.py               # binary appinfo.vdf parser
+│   │   ├── compat_tools.py          # discovery of installed compat tools (Proton custom + official)
 ├── tests/
 │   ├── fixtures/                    # synthetic VDF + TOML fixtures
 │   ├── conftest.py                  # fake_steam fixture
@@ -72,6 +76,12 @@ External paths used at runtime:
   `CompatTool`. Dependency-free dataclasses that cross every layer.
 
 ### `io/` — filesystem reads/writes
+
+All modules use PyPI `vdf >= 3.4` for text VDF (`io/{discovery,config_vdf,
+localconfig_vdf,compat_tools}.py`) and `vdf.binary_load`/`vdf.binary_dump`
+for binary VDF (`io/shortcuts_vdf.py`); `io/appinfo.py` parses Steam's
+`appinfo.vdf` cache with its own custom binary parser. Case-insensitive
+section lookups go through `io/_vdf_util.ci_get()`.
 
 - **`discovery.py`** — `discover(steam_root)`, `list_users(ctx)`,
   `list_apps(ctx)`, `library_label(ctx, path)`. Parses `libraryfolders.vdf`,
