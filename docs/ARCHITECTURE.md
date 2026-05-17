@@ -100,8 +100,8 @@ this with AST inspection.
 │       ├── backup_cmd.py            # `backup`
 │       ├── restore_cmd.py           # `restore`
 │       ├── config_cmd.py            # `config` sub-typer (path/show/edit/get/set/...)
-│       ├── shortcuts_cmd.py         # `shortcuts` sub-typer (path/show/edit)
-│       └── scopebuddy_cmd.py        # `scopebuddy` sub-typer for per-game ScopeBuddy stubs (observe/init)
+│       ├── scopebuddy_cmd.py        # `scopebuddy` sub-typer for per-game ScopeBuddy stubs (observe/init)
+│       └── shortcuts_cmd.py         # `shortcuts` sub-typer for the binary shortcuts.vdf of non-Steam games (path/show/edit)
 ├── tests/
 │   ├── fixtures/                    # synthetic VDF + TOML fixtures
 │   ├── conftest.py                  # fake_steam fixture
@@ -175,7 +175,7 @@ through `io/_vdf_util.ci_get()`.
 
 Each top-level command (`list`, `diff`, `apply`, `clear`, `open`, `backup`,
 `restore`) lives in its own `<verb>_cmd.py`. Each sub-typer family (`config`,
-`shortcuts`, `scopebuddy`) lives in `<name>_cmd.py`. The Typer app singleton is in
+`scopebuddy`, `shortcuts`) lives in `<name>_cmd.py`. The Typer app singleton is in
 `cli/app.py`; everything is wired in `cli/__init__.py` via side-effect
 imports.
 

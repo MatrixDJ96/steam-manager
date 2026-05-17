@@ -72,8 +72,8 @@ filters out common non-game patterns (soundtracks, OSTs, etc.).
 | `open &lt;appid&gt;`       | Open the game's install folder (or `--compat` for compatdata) via `xdg-open`. |
 | `clear`              | Wipe ALL compat tool overrides + launch options for every app (no type filter). Auto-backup. |
 | `scopebuddy` / `scb` | ScopeBuddy: `observe` (default) + `init` (per AppID, `--missing`, interactive). `scb` is a short hidden alias. |
+| `shortcuts` / `sct`  | Edit Steam's binary `shortcuts.vdf` (non-Steam games). `path`, `show`, `edit`. `sct` is a short hidden alias. |
 | `update`             | Self-update the binary to the latest GitHub release. `--check` (read-only), `--yes` (skip prompt), `--force` (reinstall same version). PyInstaller-only. |
-| `shortcuts`          | Edit Steam's binary `shortcuts.vdf` (non-Steam games). `path`, `show`, `edit`. |
 
 ### Global options
 

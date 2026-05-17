@@ -187,7 +187,7 @@ It's not editable with a normal editor — the values carry int32 vs string
 types explicitly.
 
 ```bash
-steam-manager shortcuts path             # print the file path
+steam-manager shortcuts path             # print the file path  (alias: sct)
 steam-manager shortcuts show             # print as pretty JSON (read-only)
 steam-manager shortcuts edit             # round-trip via JSON in $EDITOR
 ```

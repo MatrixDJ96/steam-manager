@@ -75,8 +75,8 @@ src/steam_manager/
     ├── backup_cmd.py     `backup` command
     ├── restore_cmd.py    `restore` command
     ├── config_cmd.py     `config` sub-typer (path/show/edit/get/set/unset/ignore/reset)
-    ├── shortcuts_cmd.py  `shortcuts` sub-typer (path/show/edit)
     ├── scopebuddy_cmd.py `scopebuddy` sub-typer for per-game ScopeBuddy stubs (observe/init)
+    ├── shortcuts_cmd.py  `shortcuts` sub-typer for the binary shortcuts.vdf of non-Steam games (path/show/edit)
     └── __init__.py       wires everything: side-effect imports of *_cmd, add_typer, main()
 ```
 
