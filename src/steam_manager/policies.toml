@@ -3,11 +3,15 @@ max_backups = 10
 target_users = ["active"]
 
 [games]
-compat_tool    = "Proton-CachyOS Latest"
+# compat_tool is a Steam compat-tool *tech_name*, not a display name — Steam
+# silently ignores display names. Run `steam-manager list` to see installed
+# ones (e.g. proton_experimental, proton-cachyos-slr). Unset by default; set
+# it with `steam-manager config`.
+# compat_tool    = "proton-cachyos-slr"
 launch_options = "scopebuddy -- %command%"
 
 [applications]
-# compat_tool    = "Proton-CachyOS Latest"
+# compat_tool    = "proton-cachyos-slr"
 # launch_options = "scopebuddy -- %command%"
 
 # [overrides.<appid>]
