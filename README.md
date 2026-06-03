@@ -59,6 +59,7 @@ launch_options = "DXVK_FRAME_RATE=0 scopebuddy -- %command%"
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
+pytest                         # hermetic suite (-m "not tui" skips the Textual Pilot tests)
 ```
 
 Internals are documented in `docs/ARCHITECTURE.md`; build commands and

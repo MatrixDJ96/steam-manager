@@ -84,7 +84,12 @@ modifies game files or `appmanifest_*.acf`.
 │       ├── _targets.py              # --user/--all-users resolution + banner
 │       ├── _wizard_core.py          # pure, render-free config core (Change model, load_state, reducers, apply)
 │       ├── _wizard.py               # classic questionary `config --classic` flow (drives _wizard_core)
+│       ├── _config_entry.py         # config dispatch: TUI vs classic vs scriptable + non-TTY guard
+│       ├── tui/                     # Textual TUI (the only package importing textual)
+│       │   ├── __init__.py          #   run()/run_scb(): lazy entry points of the two Apps
 │       │   ├── app.py               #   ConfigApp on _wizard_core: one-screen editor + async drift
+│       │   ├── widgets.py           #   modal screens (game editor, settings hub, pickers, confirm, scb row)
+│       │   └── app.tcss             #   stylesheet (package data)
 │       ├── _list_render.py          # render_app_groups() — list's Games/Applications panels
 │       ├── list_cmd.py              # `list` — game inventory with compat tool + per-user launch options
 │       ├── diff_cmd.py              # `diff` — preview policy drift (read-only; exit 1 if drift)
@@ -99,6 +104,8 @@ modifies game files or `appmanifest_*.acf`.
 ├── tests/
 │   ├── fixtures/                    # synthetic VDF + TOML fixtures
 │   ├── conftest.py                  # fake_steam fixture
+│   ├── tui_helpers.py               # shared helpers for the Textual Pilot suites
+│   └── test_*.py                    # test modules (Textual Pilot tests marked `tui`)
 └── docs/
     └── ARCHITECTURE.md              # this document
 ```
@@ -218,6 +225,21 @@ Shared CLI helpers (private to the cli/ layer):
 
 The `config` editor is a **shared pure core with two front-ends**:
 
+- **`_wizard_core.py`** — the front-end-agnostic core. `Change` (frozen
+  key/old/new), `load_state(ctx)` (the single merged read; degrades to a
+  policy-only state with `steam_found=False` when no Steam is present), pure
+  `set_*` reducers returning a new `WizardState` (folded through
+  `_merge_pending`/`_is_noop`), and the single `apply(state)` write point.
+  Imports only `policy`, `io`, `models`, and UI-free `cli` siblings — **no
+  questionary, Rich, Typer, or Textual** — so the edit logic is unit-testable
+  without a terminal. **Drift is deliberately NOT computed here**: `_drift`
+  reaches `render` (→ questionary) via `_targets`, which would taint the pure
+  core, so the TUI computes drift in a UI-layer async worker instead.
+- **`_config_entry.py`** — `dispatch(classic, tui)`: chooses the front-end by
+  flag > `STEAM_MANAGER_CONFIG_UI` > default (`tui`). A non-TTY stream prints
+  the scriptable hint and exits 2 (never spins a UI into a dead pipe); a Textual
+  startup failure falls through to the same hint. `cli.tui` is imported lazily
+  here so non-TUI commands never load Textual.
 - **`_wizard.py`** — the classic questionary flow (`--classic`), also driving
   `_wizard_core`.
 
