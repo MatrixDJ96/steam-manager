@@ -1,4 +1,7 @@
-"""Interactive wizard for `steam-manager config wizard`.
+"""Classic prompt-based wizard for `steam-manager config --classic`.
+
+The default `config` editor is the Textual TUI (`cli/tui/`); this questionary
+flow is the `--classic` escape hatch. Both drive the same pure `_wizard_core`.
 
 Design principles:
 
@@ -25,7 +28,6 @@ Design principles:
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
 from io import StringIO
 from typing import Any, Callable
 
@@ -38,22 +40,21 @@ from rich.panel import Panel
 from rich.table import Table
 
 from steam_manager import policy, render
-from steam_manager.cli import _appinfo
-from steam_manager.cli._appinfo import is_listable
 from steam_manager.cli._common import policy_paths, steam_root
+from steam_manager.cli._wizard_core import (
+    Change,
+    _UNSET,
+    _apply_changes,
+    _appids_with_ignore,
+    _effective,
+    _installed_games,
+    _is_noop,
+    _merge_pending,
+    _read_ignored_from_user_doc,
+    _toml_array,
+)
 from steam_manager.io import compat_tools, discovery, policies_toml
 from steam_manager.models import SteamContext
-
-
-_UNSET = object()
-
-
-@dataclass(frozen=True)
-class Change:
-    """A single pending modification to the user policy file."""
-    key: str
-    old: Any
-    new: Any
 
 
 # ----- entry point ----------------------------------------------------------
@@ -66,16 +67,40 @@ def run() -> None:
         render.error(str(exc))
         return
 
+    # Edits accumulate here and are written in one batch via "Apply", so the
+    # user can queue several changes before committing. `last_area` re-opens
+    # the menu on the previously chosen entry instead of jumping to the top.
+    pending: list[Change] = []
+    last_area: str | None = None
     while True:
-        area = _pick_area()
-        if area is None or area == "exit":
+        area = _pick_area(len(pending), default=last_area)
+        last_area = area if isinstance(area, str) else None
+
+        if area is render.BACK:
+            if pending and not render.confirm(
+                f"Discard {len(pending)} unapplied change(s) and exit?",
+                default=False,
+            ):
+                continue
             return
 
+        if area == "apply":
+            _apply_changes(pending)
+            render.success(f"Applied {len(pending)} change(s).")
+            pending, last_area = [], None
+            continue
+        if area == "discard":
+            render.info(f"Discarded {len(pending)} pending change(s).")
+            pending, last_area = [], None
+            continue
         if area == "show":
             _print_current_config()
+            if pending:
+                _print_pending_changes(pending)
             continue
         if area == "reset":
             _flow_reset()
+            pending, last_area = [], None
             continue
 
         flow = _AREA_FLOWS[area]
@@ -85,24 +110,24 @@ def run() -> None:
             render.warning("Cancelled.")
             continue
 
-        changes = [c for c in changes if not _is_noop(c)]
-        if not changes:
-            continue
-
-        _print_pending_changes(changes)
-        if not render.confirm("Apply changes?", default=True):
-            render.info("Discarded.")
-            continue
-
-        _apply_changes(changes)
-        render.success(f"Applied {len(changes)} change(s).")
+        pending = _merge_pending(pending, changes)
 
 
 # ----- main menu ------------------------------------------------------------
 
 
-def _pick_area() -> str | None:
-    return render.select_one_interactive("What do you want to do?", [
+def _pick_area(pending_count: int = 0, default: str | None = None) -> object:
+    """The main menu. Apply/Discard appear (with a count) only when edits are
+    queued; `default` re-opens the cursor on the previously chosen entry.
+    Returns an action string, or `render.BACK` (the Exit entry / Esc) to quit."""
+    items: list = []
+    if pending_count:
+        items += [
+            (f"✓ Apply pending changes ({pending_count})", "apply"),
+            (f"✗ Discard pending changes ({pending_count})", "discard"),
+            None,
+        ]
+    items += [
         ("Change Proton (default for all games)", "compat-games"),
         ("Change Proton (for one game)", "compat-single"),
         ("Change launch options (default for all games)", "launch-games"),
@@ -115,20 +140,22 @@ def _pick_area() -> str | None:
         None,
         ("Show current configuration", "show"),
         ("Reset to defaults", "reset"),
-        None,
-        ("Exit", "exit"),
-    ])
+    ]
+    return render.menu(
+        "What do you want to do?", items, default=default,
+        back_label="Exit", instruction="↑↓ move · Enter select · Esc to exit",
+    )
 
 
 # ----- breadcrumb header ---------------------------------------------------
 
 
 def _print_breadcrumb(setting: str, scope: str, current: Any) -> None:
-    """Two-line context header rendered before a value picker."""
+    """One-line context header rendered before a value picker."""
     typer.echo()
-    typer.secho(f"Editing: {setting} — [{scope}]", fg="cyan", bold=True)
-    typer.secho(f"Current: {_format_value(current)}", fg="bright_black")
-    typer.echo()
+    head = typer.style(setting, fg="cyan", bold=True)
+    meta = typer.style(f"[{scope}] · now: {_format_value(current)}", fg="bright_black")
+    typer.echo(f"{head}  {meta}")
 
 
 # ----- sub-flows: compat tool ----------------------------------------------
@@ -167,10 +194,10 @@ def _edit_compat_tool(ctx: SteamContext, scope: str) -> list[Change]:
             choices.append(questionary.Choice(title=t.display_name, value=t.tech_name))
     choices.append(questionary.Separator("── Special ──"))
     choices.append(questionary.Choice(title="None (use Steam default)", value="__none__"))
-    choices.append(questionary.Choice(title="Skip (keep current)", value="__keep__"))
 
-    pick = render.select_one_interactive("Select:", choices, default=current)
-    if pick is None or pick == "__keep__":
+    pick = render.menu("Select a compat tool", choices, default=current,
+                       back_label="← Back (keep current value)")
+    if pick is render.BACK:
         return []
     new = _UNSET if pick == "__none__" else pick
     return [Change(f"{scope}.compat_tool", current, new)]
@@ -207,10 +234,10 @@ def _edit_launch_options(scope: str) -> list[Change]:
     choices.append(questionary.Separator("── Special ──"))
     choices.append(questionary.Choice(title="Custom…", value="__custom__"))
     choices.append(questionary.Choice(title="None (clear launch options)", value="__none__"))
-    choices.append(questionary.Choice(title="Skip (keep current)", value="__keep__"))
 
-    pick = render.select_one_interactive("Select:", choices, default=current)
-    if pick is None or pick == "__keep__":
+    pick = render.menu("Select launch options", choices, default=current,
+                       back_label="← Back (keep current value)")
+    if pick is render.BACK:
         return []
     if pick == "__none__":
         return [Change(f"{scope}.launch_options", current, _UNSET)]
@@ -238,35 +265,43 @@ def _flow_target_users(ctx: SteamContext) -> list[Change]:
 
     _print_breadcrumb("target users", "general", current_list)
 
-    qchoices: list = [
+    # `active`, `*` and an explicit set of accounts are mutually exclusive:
+    # `active` resolves to whoever is logged in, `*` to everyone. Mixing them
+    # — or mixing a sentinel with named accounts — is meaningless, so the mode
+    # is a single-select; only the explicit-set mode opens a multi-select.
+    # Pre-position the cursor on the mode the current value already uses.
+    if current_set == {"active"}:
+        default_mode = "active"
+    elif current_set == {"*"}:
+        default_mode = "*"
+    else:
+        default_mode = "specific"
+
+    mode = render.menu("Target which accounts?", [
+        ("Active account (whoever is logged in)", "active"),
+        ("All local accounts", "*"),
+        ("Specific accounts…", "specific"),
+    ], default=default_mode, back_label="← Back")
+    if mode is render.BACK:
+        return []
+    if mode in ("active", "*"):
+        return [Change("general.target_users", current_list, _toml_array([mode]))]
+
+    # Explicit set: a genuine multi-select over the real account names only.
+    qchoices = [
         questionary.Choice(
-            "active (currently logged in)",
-            value="active", checked="active" in current_set,
-        ),
-        questionary.Choice(
-            "* (all local accounts)",
-            value="*", checked="*" in current_set,
-        ),
-        questionary.Separator(),
-    ]
-    for u in users:
-        suffix = "  (active)" if u.is_active else ""
-        qchoices.append(questionary.Choice(
-            f"{u.account_name}{suffix}",
+            [("", u.account_name)] + ([render.dim("  active")] if u.is_active else []),
             value=u.account_name, checked=u.account_name in current_set,
-        ))
-    selected = questionary.checkbox("Select:", choices=qchoices).ask()
-    if selected is None:
+        )
+        for u in users
+    ]
+    selected = render.multiselect("Select accounts", qchoices)
+    if selected is render.BACK:
         return []
     if not selected:
         render.warning("Empty selection — keeping current target_users.")
         return []
-    if "*" in selected:
-        selected = ["*"]
-    arr = tomlkit.array()
-    for v in selected:
-        arr.append(v)
-    return [Change("general.target_users", current_list, arr)]
+    return [Change("general.target_users", current_list, _toml_array(selected))]
 
 
 def _flow_max_backups(ctx: SteamContext) -> list[Change]:
@@ -294,13 +329,13 @@ def _flow_ignore_list(ctx: SteamContext) -> list[Change]:
     _print_breadcrumb("ignore list", "overrides", f"{len(current)} game(s) ignored")
     qchoices = [
         questionary.Choice(
-            f"{a.name} ({a.appid})",
+            [("", a.name), render.dim(f"  {a.appid}")],
             value=a.appid, checked=a.appid in current,
         )
         for a in games
     ]
-    selected = questionary.checkbox("Games to ignore:", choices=qchoices).ask()
-    if selected is None:
+    selected = render.multiselect("Games to ignore", qchoices)
+    if selected is render.BACK:
         return []
     selected_set = set(selected)
     changes: list[Change] = []
@@ -337,42 +372,9 @@ def _pick_installed_game(ctx: SteamContext) -> str | None:
     if not games:
         render.warning("No installed games found.")
         return None
-    return render.select_one_interactive(
-        "Which game?",
-        [(f"{a.name} ({a.appid})", a.appid) for a in games],
-    )
-
-
-def _installed_games(ctx: SteamContext) -> list:
-    types = _appinfo.appinfo_types()
-    return sorted(
-        (a for a in discovery.list_apps(ctx) if a.installed and is_listable(a, types)),
-        key=lambda a: a.name.lower(),
-    )
-
-
-def _effective(key: str) -> Any:
-    engine = policy.load(policy_paths())
-    doc = policies_toml.render_effective_doc(engine)
-    return policies_toml.get_dotted(doc, key)
-
-
-def _apply_changes(changes: list[Change]) -> None:
-    doc = policies_toml.load_doc()
-    for c in changes:
-        if c.new is _UNSET:
-            policies_toml.unset_dotted(doc, c.key)
-        else:
-            policies_toml.set_dotted(doc, c.key, c.new)
-    policies_toml.save_doc(doc)
-
-
-def _is_noop(c: Change) -> bool:
-    if c.new is _UNSET:
-        return c.old is None
-    if isinstance(c.new, list) and isinstance(c.old, list):
-        return list(c.new) == list(c.old)
-    return c.new == c.old
+    choices: list = [(f"{a.name} ({a.appid})", a.appid) for a in games]
+    pick = render.menu("Which game?", choices, back_label="← Back")
+    return None if pick is render.BACK else pick
 
 
 def _format_value(v: Any) -> str:
@@ -385,20 +387,6 @@ def _format_value(v: Any) -> str:
 
 def _format_new(c: Change) -> str:
     return "(unset)" if c.new is _UNSET else _format_value(c.new)
-
-
-def _appids_with_ignore(overrides: Any) -> set[str]:
-    if not isinstance(overrides, (dict, tomlkit.items.Table)):
-        return set()
-    return {
-        appid for appid, section in overrides.items()
-        if isinstance(section, (dict, tomlkit.items.Table))
-        and section.get("ignore") is True
-    }
-
-
-def _read_ignored_from_user_doc() -> set[str]:
-    return _appids_with_ignore(policies_toml.load_doc().get("overrides") or {})
 
 
 # ----- print helpers (manual, no auto-render at loop top) ------------------
