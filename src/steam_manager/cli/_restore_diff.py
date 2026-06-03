@@ -20,7 +20,7 @@ import tempfile
 from pathlib import Path
 
 from steam_manager.io import backups, config_vdf, discovery, localconfig_vdf
-from steam_manager.models import SteamContext, SteamUser
+from steam_manager.models import SteamApp, SteamContext, SteamUser
 
 
 def _entry_compat_name(entry) -> str | None:
@@ -34,6 +34,61 @@ def _entry_launch_options(entry) -> str | None:
     if not isinstance(entry, dict):
         return None
     return entry.get("LaunchOptions")
+
+
+def _change(appid: str, apps_by_id: dict[str, SteamApp], *,
+            field: str, old, new, user: str | None) -> dict:
+    """Build one `render.diff_table_str`-shaped change dict, resolving the
+    app's display name and link paths (falling back to '?' if it's gone)."""
+    app = apps_by_id.get(appid)
+    return {
+        "appid": appid,
+        "name": app.name if app else "?",
+        "compatdata_path": str(app.compatdata_path) if app else "",
+        "install_path": str(app.install_path) if app else "",
+        "field": field, "old": old, "new": new, "user": user,
+    }
+
+
+def _compat_diff(archive_config: Path, ctx: SteamContext,
+                 apps_by_id: dict[str, SteamApp]) -> list[dict]:
+    """System-wide compat-tool changes between the live config.vdf and the
+    archive's. The appid '0' default-tool slot is skipped so restoring a
+    checkpoint never silently changes Steam's global default."""
+    current_map = config_vdf.load_compat_map_from_file(ctx.root / "config" / "config.vdf")
+    archive_map = config_vdf.load_compat_map_from_file(archive_config)
+    out: list[dict] = []
+    for appid in sorted(set(current_map) | set(archive_map)):
+        if appid == "0":
+            continue
+        cur = _entry_compat_name(current_map.get(appid))
+        arc = _entry_compat_name(archive_map.get(appid))
+        if cur != arc:
+            out.append(_change(appid, apps_by_id, field="compat_tool",
+                               old=cur, new=arc, user=None))
+    return out
+
+
+def _launch_diff(archived_localconfigs: dict[str, Path],
+                 user_by_name: dict[str, SteamUser],
+                 apps_by_id: dict[str, SteamApp]) -> list[dict]:
+    """Per-user launch-option changes between each live localconfig.vdf and the
+    archive's. Users no longer present locally are skipped."""
+    out: list[dict] = []
+    for uname, archive_lc in archived_localconfigs.items():
+        if uname not in user_by_name:
+            continue
+        disk_lc = user_by_name[uname].userdata_dir / "config" / "localconfig.vdf"
+        current_apps = localconfig_vdf.load_apps_section_from_file(disk_lc)
+        archive_apps = (localconfig_vdf.load_apps_section_from_file(archive_lc)
+                        if archive_lc.exists() else {})
+        for appid in sorted(set(current_apps) | set(archive_apps)):
+            cur = _entry_launch_options(current_apps.get(appid))
+            arc = _entry_launch_options(archive_apps.get(appid))
+            if cur != arc:
+                out.append(_change(appid, apps_by_id, field="launch_options",
+                                   old=cur, new=arc, user=uname))
+    return out
 
 
 def compute_restore_diff(
@@ -58,72 +113,18 @@ def compute_restore_diff(
 
     with tempfile.TemporaryDirectory(prefix="sm-restore-diff-") as tmp:
         tmp_dir = Path(tmp)
-        targets: dict[str, Path] = {}
         archive_config = tmp_dir / "config.vdf"
-        targets["config.vdf"] = archive_config
-
+        targets: dict[str, Path] = {"config.vdf": archive_config}
         archived_localconfigs: dict[str, Path] = {}
         for uname in users_in_archive:
-            arch_name = f"users/{uname}/localconfig.vdf"
             dest = tmp_dir / "users" / uname / "localconfig.vdf"
-            targets[arch_name] = dest
+            targets[f"users/{uname}/localconfig.vdf"] = dest
             archived_localconfigs[uname] = dest
 
         extracted = backups.extract_checkpoint(archive_path, targets)
 
-        # --- Compat tool diff (system-wide) -------------------------------
         if "config.vdf" in extracted:
-            disk_config = ctx.root / "config" / "config.vdf"
-            current_map = config_vdf.load_compat_map_from_file(disk_config)
-            archive_map = config_vdf.load_compat_map_from_file(archive_config)
-            for appid in sorted(set(current_map.keys()) | set(archive_map.keys())):
-                if appid == "0":
-                    # Steam's default-tool slot; treat specially or skip.
-                    # We skip it: restoring a checkpoint shouldn't surprise
-                    # the user with a change to the global default.
-                    continue
-                cur = _entry_compat_name(current_map.get(appid))
-                arc = _entry_compat_name(archive_map.get(appid))
-                if cur == arc:
-                    continue
-                app = apps_by_id.get(appid)
-                changes.append({
-                    "appid": appid,
-                    "name": app.name if app else "?",
-                    "compatdata_path": str(app.compatdata_path) if app else "",
-                    "install_path": str(app.install_path) if app else "",
-                    "field": "compat_tool",
-                    "old": cur,
-                    "new": arc,
-                    "user": None,
-                })
-
-        # --- Launch options diff (per user) -------------------------------
-        for uname, archive_lc in archived_localconfigs.items():
-            if uname not in user_by_name:
-                continue  # account no longer exists locally
-            user = user_by_name[uname]
-            disk_lc = user.userdata_dir / "config" / "localconfig.vdf"
-            current_apps = localconfig_vdf.load_apps_section_from_file(disk_lc)
-            archive_apps = (
-                localconfig_vdf.load_apps_section_from_file(archive_lc)
-                if archive_lc.exists() else {}
-            )
-            for appid in sorted(set(current_apps.keys()) | set(archive_apps.keys())):
-                cur = _entry_launch_options(current_apps.get(appid))
-                arc = _entry_launch_options(archive_apps.get(appid))
-                if cur == arc:
-                    continue
-                app = apps_by_id.get(appid)
-                changes.append({
-                    "appid": appid,
-                    "name": app.name if app else "?",
-                    "compatdata_path": str(app.compatdata_path) if app else "",
-                    "install_path": str(app.install_path) if app else "",
-                    "field": "launch_options",
-                    "old": cur,
-                    "new": arc,
-                    "user": uname,
-                })
+            changes += _compat_diff(archive_config, ctx, apps_by_id)
+        changes += _launch_diff(archived_localconfigs, user_by_name, apps_by_id)
 
     return changes

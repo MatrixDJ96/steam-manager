@@ -26,7 +26,9 @@ def compute_drift(
 
     Each change dict has: appid, name, compatdata_path, install_path,
     field ('compat_tool' | 'launch_options'), old, new, user (None for
-    system-wide compat_tool changes, account_name for per-user options).
+    system-wide compat_tool changes, account_name for per-user options),
+    section ('games' | 'applications' — the policy section the app resolved
+    through, used by `render.diff_table_str` to group the output).
     """
     changes: list[dict] = []
     spec = target_spec if target_spec is not None else engine.target_users
@@ -49,6 +51,7 @@ def compute_drift(
 
         compatdata_path = str(app.compatdata_path)
         install_path = str(app.install_path)
+        section = policy.section_for_type(app_type)
 
         if pol.compat_tool:
             current_compat = config_vdf.get_compat_tool(ctx, app.appid)
@@ -59,6 +62,7 @@ def compute_drift(
                     "install_path": install_path,
                     "field": "compat_tool", "old": current_compat,
                     "new": pol.compat_tool, "user": None,
+                    "section": section,
                 })
 
         if pol.launch_options:
@@ -71,5 +75,6 @@ def compute_drift(
                         "install_path": install_path,
                         "field": "launch_options", "old": current_launch,
                         "new": pol.launch_options, "user": user.account_name,
+                        "section": section,
                     })
     return changes

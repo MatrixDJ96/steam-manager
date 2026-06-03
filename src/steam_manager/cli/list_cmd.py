@@ -8,7 +8,7 @@ from rich.console import Console
 
 from steam_manager import policy, render
 from steam_manager.cli.app import app
-from steam_manager.cli import _appinfo
+from steam_manager.cli import _appinfo, _list_render
 from steam_manager.cli._appinfo import is_listable
 from steam_manager.cli._common import ExitCode, policy_paths, steam_root
 from steam_manager.cli._drift import compute_drift
@@ -63,34 +63,14 @@ def list_cmd(
 
     render.info(target_users_banner(users_list, target_spec))
 
-    # Same width cap as the other tables so wide terminals don't stretch
-    # the list past readable bounds (see render.effective_max_width).
+    # Width is only a ceiling — the panels size to their content
+    # (see render.effective_max_width / _make_inner_table).
     console = Console(width=render.effective_max_width())
-    table = render._make_inner_table()
-    # AppID rendered as a clickable link to the Proton compatdata folder.
-    # Name rendered as a clickable link to the game's install folder.
-    table.add_column("AppID", justify="right", style="bold cyan", no_wrap=True)
-    table.add_column("Name", no_wrap=True)
-    table.add_column("CompatTool", no_wrap=True)
-    multi_user = len(target_users) > 1
-    for u in target_users:
-        col_name = (f"Launch ([cyan]{u.account_name}[/cyan])"
-                    if multi_user else "LaunchOptions")
-        table.add_column(col_name, no_wrap=True, overflow="ellipsis")
 
     drift_changes = compute_drift(ctx, listable, users_list, engine, target_spec)
     drift_appids = {c["appid"] for c in drift_changes}
 
-    for a in listable:
-        compat = config_vdf.get_compat_tool(ctx, a.appid) or "[dim]<none>[/dim]"
-        appid_cell = render.link_cell(str(a.compatdata_path), a.appid)
-        name_cell = render.link_cell(str(a.install_path), a.name)
-        row = [appid_cell, name_cell, compat]
-        for u in target_users:
-            lo = localconfig_vdf.get_launch_options(u, a.appid) or "[dim]<none>[/dim]"
-            row.append(lo)
-        row_style = "bold" if a.appid in drift_appids else "dim"
-        table.add_row(*row, style=row_style)
-
-    console.print(render._panel(table, "Installed games"))
+    _list_render.render_app_groups(
+        console, ctx, listable, types, target_users, drift_appids,
+    )
     raise typer.Exit(ExitCode.OK)

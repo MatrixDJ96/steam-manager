@@ -6,7 +6,7 @@ and each sub-typer family lives in `<name>_cmd.py` (config, shortcuts, scb).
 Every command registers itself via the `@app.command()` decorator at import
 time; this module imports each module purely for that side effect.
 
-Dependency rules (see CLAUDE.md / docs/ARCHITECTURE.md):
+Dependency rules (see AGENTS.md / docs/ARCHITECTURE.md):
 - cli/ imports from io/, policy, safety, render, models — never the reverse
 - io/ is import-free of CLI concerns
 - _helpers (cli/_*.py) may import each other; *_cmd.py modules import them

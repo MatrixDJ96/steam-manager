@@ -43,6 +43,22 @@ def test_list_outputs_all_apps(fake_steam, monkeypatch):
     assert "Game Two" in result.stdout
 
 
+def test_list_groups_games_and_applications(fake_steam, monkeypatch):
+    """`list` renders games and applications in separate, ordered panels."""
+    monkeypatch.setenv("STEAM_MANAGER_STEAM_ROOT", str(fake_steam))
+    monkeypatch.setenv("STEAM_MANAGER_POLICY_PATHS",
+                       str(Path(__file__).parent / "fixtures" / "policies_minimal.toml"))
+    # 111 = "Game Two" (a game), 222 = "Game One" (an application).
+    monkeypatch.setattr("steam_manager.cli._appinfo.appinfo_types",
+                        lambda: {"111": "game", "222": "application"})
+    result = runner.invoke(cli.app, ["list"])
+    assert result.exit_code == 0
+    out = result.stdout
+    assert "Games" in out and "Applications" in out
+    assert out.index("Games") < out.index("Applications")
+    assert "Game Two" in out and "Game One" in out
+
+
 def test_list_json_output(fake_steam, monkeypatch):
     monkeypatch.setenv("STEAM_MANAGER_STEAM_ROOT", str(fake_steam))
     monkeypatch.setenv("STEAM_MANAGER_POLICY_PATHS",

@@ -17,7 +17,6 @@ import datetime as _dt
 import json
 import os
 import sys
-from pathlib import Path
 
 from steam_manager import __version__
 from steam_manager.cli._common import update_state_path

@@ -19,6 +19,18 @@ def _disable_update_notifier(monkeypatch):
     monkeypatch.setenv("STEAM_MANAGER_NO_UPDATE_NOTIFIER", "1")
 
 
+@pytest.fixture(autouse=True)
+def _isolate_system_compat_dirs(monkeypatch):
+    """Keep real system compat-tool dirs out of the suite.
+
+    `io.compat_tools` scans `/usr/share/steam/compatibilitytools.d/` (and the
+    `/usr/local` sibling) by default — on a dev machine those hold real Proton
+    builds that would leak into discovery assertions. An empty override means
+    no system dirs; tests that exercise system discovery set it explicitly.
+    """
+    monkeypatch.setenv("STEAM_MANAGER_COMPAT_DIRS", "")
+
+
 @pytest.fixture
 def fake_urlopen(monkeypatch):
     """Intercept urllib.request.urlopen with a configurable URL→response map.
