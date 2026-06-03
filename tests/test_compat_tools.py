@@ -38,6 +38,25 @@ def _write_custom_tool(steam_root: Path, dir_name: str, tech: str, display: str)
     )
 
 
+def _write_tool_in(base: Path, dir_name: str, tech: str, display: str) -> None:
+    """Create a custom tool entry under an arbitrary compatibilitytools.d base."""
+    tool_dir = base / dir_name
+    tool_dir.mkdir(parents=True, exist_ok=True)
+    (tool_dir / "compatibilitytool.vdf").write_text(
+        '"compatibilitytools"\n'
+        '{\n'
+        '    "compat_tools"\n'
+        '    {\n'
+        f'        "{tech}"\n'
+        '        {\n'
+        '            "install_path" "."\n'
+        f'            "display_name" "{display}"\n'
+        '        }\n'
+        '    }\n'
+        '}\n'
+    )
+
+
 def _write_proton_appmanifest(steam_root: Path, appid: str, name: str, installdir: str) -> None:
     """Add a Proton appmanifest entry to the default library."""
     (steam_root / "steamapps" / f"appmanifest_{appid}.acf").write_text(
@@ -83,6 +102,46 @@ def test_list_compat_tools_custom_first(fake_steam: Path):
     last_custom_idx = max((i for i, s in enumerate(sources) if s == "custom"), default=-1)
     first_official_idx = next((i for i, s in enumerate(sources) if s == "official"), len(sources))
     assert last_custom_idx < first_official_idx
+
+
+def test_list_compat_tools_finds_system_wide(fake_steam: Path, tmp_path: Path, monkeypatch):
+    """Distro-packaged tools (e.g. CachyOS proton-cachyos) live in a system dir."""
+    sysdir = tmp_path / "usr_share_steam" / "compatibilitytools.d"
+    _write_tool_in(sysdir, "proton-cachyos-slr", "proton-cachyos-slr",
+                   "proton-cachyos-11.0 (steam linux runtime)")
+    monkeypatch.setenv("STEAM_MANAGER_COMPAT_DIRS", str(sysdir))
+    ctx = discovery.discover(steam_root=fake_steam)
+    tools = compat_tools.list_compat_tools(ctx)
+    custom = {t.tech_name: t for t in tools if t.source == "custom"}
+    assert "proton-cachyos-slr" in custom
+    assert custom["proton-cachyos-slr"].install_path == sysdir / "proton-cachyos-slr"
+
+
+def test_list_compat_tools_multiple_system_dirs(fake_steam: Path, tmp_path: Path, monkeypatch):
+    """STEAM_MANAGER_COMPAT_DIRS is colon-separated; every dir is scanned."""
+    d1 = tmp_path / "share" / "compatibilitytools.d"
+    d2 = tmp_path / "local_share" / "compatibilitytools.d"
+    _write_tool_in(d1, "tool-a", "tool_a", "Tool A")
+    _write_tool_in(d2, "tool-b", "tool_b", "Tool B")
+    import os
+    monkeypatch.setenv("STEAM_MANAGER_COMPAT_DIRS", os.pathsep.join([str(d1), str(d2)]))
+    ctx = discovery.discover(steam_root=fake_steam)
+    techs = {t.tech_name for t in compat_tools.list_compat_tools(ctx)}
+    assert {"tool_a", "tool_b"} <= techs
+
+
+def test_list_compat_tools_user_shadows_system(fake_steam: Path, tmp_path: Path, monkeypatch):
+    """Same tech_name in user + system dir: the user-install entry wins."""
+    sysdir = tmp_path / "usr_share_steam" / "compatibilitytools.d"
+    _write_tool_in(sysdir, "proton-cachyos-slr", "proton-cachyos-slr", "system build")
+    _write_custom_tool(fake_steam, "proton-cachyos-slr", "proton-cachyos-slr", "user build")
+    monkeypatch.setenv("STEAM_MANAGER_COMPAT_DIRS", str(sysdir))
+    ctx = discovery.discover(steam_root=fake_steam)
+    matches = [t for t in compat_tools.list_compat_tools(ctx)
+               if t.tech_name == "proton-cachyos-slr"]
+    assert len(matches) == 1
+    assert matches[0].display_name == "user build"
+    assert matches[0].install_path == fake_steam / "compatibilitytools.d" / "proton-cachyos-slr"
 
 
 def test_list_compat_tools_handles_missing_dir(fake_steam: Path):

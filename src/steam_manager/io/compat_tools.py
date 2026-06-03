@@ -2,9 +2,17 @@
 
 Two sources feed the picker:
 
-1. **User-installed custom tools** under `<steam_root>/compatibilitytools.d/`,
-   each in its own directory with a `compatibilitytool.vdf` manifest. This is
-   where GE-Proton, Proton-CachyOS, Pyroveil, etc. live.
+1. **Custom tools** declared by a `compatibilitytool.vdf` manifest, each in its
+   own directory. Steam scans several `compatibilitytools.d/` roots, all of
+   which are read here:
+     - `<steam_root>/compatibilitytools.d/` — per-install, user-managed
+       (manual GE-Proton drops, protonup-qt, ...).
+     - `/usr/share/steam/compatibilitytools.d/` and
+       `/usr/local/share/steam/compatibilitytools.d/` — system-wide, where
+       distro packages land (Arch/CachyOS `proton-cachyos`, ...).
+   A tech_name found in an earlier root shadows the same name in a later one,
+   matching Steam's own precedence. The system roots can be overridden with
+   `STEAM_MANAGER_COMPAT_DIRS` (colon-separated; replaces the built-ins).
 
 2. **Official Proton builds** installed by Steam itself as regular apps. They
    appear as `appmanifest_*.acf` files whose `name` starts with "Proton".
@@ -18,6 +26,7 @@ shows display names but always emits tech names.
 """
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -40,6 +49,29 @@ _OFFICIAL_PROTON_NAME_MAP: dict[str, str] = {
 
 # "Proton 9.0 (Beta)", "Proton 8.0", "Proton 7.0", ...
 _VERSIONED_PROTON_RE = re.compile(r"^Proton (\d+)\.\d+(?:\s|$)")
+
+# System-wide compatibilitytools.d roots Steam scans on top of the per-install
+# <steam_root> one. Distro packages install here (Arch/CachyOS proton-cachyos
+# → /usr/share/steam/compatibilitytools.d/). Overridable via the env var below.
+_SYSTEM_COMPAT_DIRS: tuple[Path, ...] = (
+    Path("/usr/share/steam/compatibilitytools.d"),
+    Path("/usr/local/share/steam/compatibilitytools.d"),
+)
+
+_COMPAT_DIRS_ENV = "STEAM_MANAGER_COMPAT_DIRS"
+
+
+def _system_compat_dirs() -> list[Path]:
+    """System-wide compatibilitytools.d dirs, honoring STEAM_MANAGER_COMPAT_DIRS.
+
+    The env var (colon-separated) *replaces* the built-in system paths — used
+    by tests to sandbox discovery and by advanced users with non-standard
+    install locations. An empty value yields no system dirs at all.
+    """
+    override = os.environ.get(_COMPAT_DIRS_ENV)
+    if override is not None:
+        return [Path(p) for p in override.split(os.pathsep) if p]
+    return list(_SYSTEM_COMPAT_DIRS)
 
 # Tools that are NOT usable as a per-game compat_tool for Windows titles.
 # These exist on disk because Steam ships them as compat tools internally
@@ -116,17 +148,29 @@ def parse_compatibilitytool_vdf(path: Path) -> list[CompatTool]:
 
 
 def _list_custom_tools(steam_root: Path) -> list[CompatTool]:
-    """Walk `<steam_root>/compatibilitytools.d/` and parse each tool's VDF."""
-    base = steam_root / "compatibilitytools.d"
-    if not base.is_dir():
-        return []
+    """Parse every `compatibilitytool.vdf` across the compat roots Steam scans.
+
+    Roots are walked in precedence order — the per-install
+    `<steam_root>/compatibilitytools.d/` first, then the system-wide dirs — so
+    a tech_name seen in an earlier root shadows the same name in a later one.
+    """
+    bases = [steam_root / "compatibilitytools.d", *_system_compat_dirs()]
     out: list[CompatTool] = []
-    for sub in sorted(base.iterdir()):
-        if not sub.is_dir():
+    seen: set[str] = set()
+    for base in bases:
+        if not base.is_dir():
             continue
-        manifest = sub / "compatibilitytool.vdf"
-        if manifest.is_file():
-            out.extend(parse_compatibilitytool_vdf(manifest))
+        for sub in sorted(base.iterdir()):
+            if not sub.is_dir():
+                continue
+            manifest = sub / "compatibilitytool.vdf"
+            if not manifest.is_file():
+                continue
+            for tool in parse_compatibilitytool_vdf(manifest):
+                if tool.tech_name in seen:
+                    continue
+                seen.add(tool.tech_name)
+                out.append(tool)
     return out
 
 

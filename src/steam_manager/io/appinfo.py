@@ -16,6 +16,28 @@ _MAGIC_V29 = 0x07564429
 _MAGIC_V28 = 0x07564428
 _MAGIC_V27 = 0x07564427
 
+# Scalar KV value types and the byte width to skip past their payload:
+# int32 / float32 are 4 bytes, int64 (two variants) are 8.
+_SCALAR_SKIP = {0x02: 4, 0x03: 4, 0x06: 8, 0x07: 8}
+
+
+def _read_string_table(data: bytes, offset: int) -> list[str]:
+    """Read the v29 string index table at `offset`: a uint32 count followed by
+    that many NUL-terminated UTF-8 strings. Empty list if the offset is out of
+    range or the table is truncated."""
+    if not (0 < offset < len(data)):
+        return []
+    strings: list[str] = []
+    (count,) = struct.unpack_from("<I", data, offset)
+    cur = offset + 4
+    for _ in range(count):
+        end = data.find(b"\x00", cur)
+        if end < 0:
+            break
+        strings.append(data[cur:end].decode("utf-8", errors="replace"))
+        cur = end + 1
+    return strings
+
 
 def parse(path: Path) -> dict[str, str]:
     """Returns {appid: type_lower} mapping. Empty dict on error."""
@@ -36,20 +58,9 @@ def parse(path: Path) -> dict[str, str]:
     string_table: list[str] = []
     cursor = 8
     if magic == _MAGIC_V29:
-        # offset to string table (uint64)
         (str_table_offset,) = struct.unpack_from("<Q", data, cursor)
         cursor += 8
-        # Read string table at the end
-        if 0 < str_table_offset < len(data):
-            tcur = str_table_offset
-            (str_count,) = struct.unpack_from("<I", data, tcur)
-            tcur += 4
-            for _ in range(str_count):
-                end = data.find(b"\x00", tcur)
-                if end < 0:
-                    break
-                string_table.append(data[tcur:end].decode("utf-8", errors="replace"))
-                tcur = end + 1
+        string_table = _read_string_table(data, str_table_offset)
 
     result: dict[str, str] = {}
     while cursor < len(data):
@@ -155,24 +166,9 @@ def _extract_type(buf: bytes, start: int, end: int, strings: list[str],
                 return value
             continue
 
-        if type_byte == 0x02:
-            # int32
-            pos += 4
-            continue
-        if type_byte == 0x03:
-            # float32
-            pos += 4
-            continue
-        if type_byte == 0x06:
-            # int64
-            pos += 8
-            continue
-        if type_byte == 0x07:
-            # int64 too in some versions
-            pos += 8
-            continue
-
-        # Unknown type byte - bail
-        return None
+        skip = _SCALAR_SKIP.get(type_byte)
+        if skip is None:
+            return None  # unknown type byte — bail
+        pos += skip
 
     return None
