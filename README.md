@@ -71,7 +71,7 @@ bash subprocess, and a prefix on `curl` would only enter `curl`'s environment.
 ### First run
 
 ```bash
-steam-manager config           # interactive wizard: pick Proton, set defaults, etc.
+steam-manager config           # interactive editor (TUI): pick Proton, set defaults, etc.
 steam-manager diff             # preview what would change (read-only)
 steam-manager apply            # commit the changes (auto-backup first)
 ```
@@ -87,7 +87,7 @@ steam-manager apply            # apply the policy
 ### Tweak the policy
 
 ```bash
-steam-manager config                                   # interactive wizard (default)
+steam-manager config                                   # full-screen TUI (default; --classic for prompts)
 steam-manager config get games.compat_tool             # read a value (scriptable)
 steam-manager config set games.compat_tool "Proton-X"  # set a value  (scriptable)
 steam-manager config unset overrides.1495710.ignore    # remove a key (scriptable)
@@ -152,9 +152,13 @@ A factory `policies.toml` ships with the binary. Your overrides live at
 
 Three ways to edit them:
 
-- `steam-manager config` — interactive wizard with picker-based prompts
-  (lists the Proton builds actually installed on your system; you don't
-  have to type the right tech name by hand).
+- `steam-manager config` — a full-screen **Textual TUI**: the whole policy on
+  one screen (defaults, a filterable games table, targets, a live Pending pane).
+  It lists the Proton builds actually installed on your system, so you never
+  type a tech name by hand. **Save** writes only `policies.toml`; run
+  `steam-manager apply` to push it onto Steam. Prefer step-by-step prompts?
+  `steam-manager config --classic`. (Over a pipe / non-interactive it prints
+  the scriptable hint instead of opening a UI.)
 - `steam-manager config set games.compat_tool "Proton-Experimental"` —
   script-friendly primitives (`get` / `set` / `unset` over dotted keys).
 - `$EDITOR $(steam-manager config path)` — edit the raw TOML by hand.
@@ -196,7 +200,7 @@ pytest                         # 223 tests, all hermetic, < 2 seconds
 Architecture, module APIs, and the build pipeline are documented in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Project-specific quirks for
 contributors (NTFS+btrfs venv, `rich-click` integration, VDF
-case-insensitivity) live in [`CLAUDE.md`](CLAUDE.md).
+case-insensitivity) live in [`AGENTS.md`](AGENTS.md).
 
 ## Docs map
 
@@ -206,7 +210,7 @@ case-insensitivity) live in [`CLAUDE.md`](CLAUDE.md).
 | [docs/HOWTO.md](docs/HOWTO.md)                    | Operator                  | Cookbook recipes for common scenarios.                         |
 | [docs/REFERENCE.md](docs/REFERENCE.md)            | Operator, scripter        | Full configuration schema, exit codes, env vars, terminal compat. |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)      | Contributor               | Internals: module reference, backup format, build pipeline.    |
-| [CLAUDE.md](CLAUDE.md)                            | Contributor, Claude Code  | Repo quirks and conventions.                                   |
+| [AGENTS.md](AGENTS.md)                            | Contributor, all agents   | Repo quirks and conventions (Claude reads it via CLAUDE.md).   |
 
 ## License
 

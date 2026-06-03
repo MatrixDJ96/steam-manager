@@ -57,7 +57,8 @@ this with AST inspection.
 <repo>/
 ├── pyproject.toml
 ├── README.md                        # user-facing quickstart
-├── CLAUDE.md                        # contributor + Claude playbook
+├── AGENTS.md                        # canonical agent playbook (contributor guide)
+├── CLAUDE.md                        # Claude bridge → @AGENTS.md
 ├── scripts/
 │   ├── build.sh                     # PyInstaller --onefile build (emits SHA256)
 │   └── install.sh                   # one-line installer with version pin + SHA256 verify
@@ -93,7 +94,13 @@ this with AST inspection.
 │       ├── _appinfo.py              # appinfo_types @lru_cache + is_listable filter
 │       ├── _drift.py                # compute_drift() used by list/diff/apply
 │       ├── _targets.py              # --user/--all-users resolution + banner
-│       ├── _wizard.py               # `config wizard` flow (show + targeted edit + diff + confirm)
+│       ├── _wizard_core.py          # pure, render-free config core (Change model, load_state, reducers, apply)
+│       ├── _wizard.py               # classic questionary `config --classic` flow (drives _wizard_core)
+│       ├── _config_entry.py         # config dispatch: TUI vs classic vs scriptable + non-TTY guard
+│       ├── tui/                      # Textual TUI (the only package importing textual)
+│       │   ├── app.py               #   ConfigApp on _wizard_core: one-screen editor + async drift
+│       │   ├── widgets.py           #   modal pickers (compat/launch/targets/backups/confirm)
+│       │   └── app.tcss             #   stylesheet (package data)
 │       ├── list_cmd.py              # `list` — game inventory with compat tool + per-user launch options
 │       ├── diff_cmd.py              # `diff` — preview policy drift (read-only; exit 1 if drift)
 │       ├── apply_cmd.py             # `apply` — write policy drift to disk (auto-backup, no dry-run)
@@ -102,14 +109,14 @@ this with AST inspection.
 │       ├── backup_cmd.py            # `backup` — manually create a full checkpoint archive
 │       ├── restore_cmd.py           # `restore` — interactive restore from a previous checkpoint
 │       ├── update_cmd.py            # `update` — self-update binary from GitHub releases
-│       ├── config_cmd.py            # `config` sub-typer for ~/.config/steam-manager/policies.toml (path/show/edit/get/set/wizard/...)
+│       ├── config_cmd.py            # `config` sub-typer (get/set/unset/path/wizard); bare/wizard delegate to _config_entry
 │       ├── scopebuddy_cmd.py        # `scopebuddy` sub-typer for per-game ScopeBuddy stubs (observe/init)
 │       └── shortcuts_cmd.py         # `shortcuts` sub-typer for the binary shortcuts.vdf of non-Steam games (path/show/edit)
 ├── tests/
 │   ├── fixtures/                    # synthetic VDF + TOML fixtures
 │   ├── conftest.py                  # fake_steam fixture
 │   ├── test_architecture.py         # AST-based layering invariants
-│   └── test_*.py                    # 223 tests total
+│   └── test_*.py                    # 301 tests (Textual Pilot tests marked `tui`)
 └── docs/
     ├── HOWTO.md                     # cookbook for common scenarios
     ├── REFERENCE.md                 # operator reference (schema, exit codes, env vars)
@@ -137,7 +144,10 @@ External paths used at runtime:
   prune}_checkpoint` so legacy callers see the old API surface.
 - **`render.py`** — Rich-based: `_make_inner_table`, `_panel`,
   `simple_table_str`, `diff_table_str`, `link_cell` (OSC 8), `success`/
-  `warning`/`error`/`info`, `select_one_interactive`,
+  `warning`/`error`/`info`, `menu` / `multiselect` (+ the `BACK` sentinel —
+  the uniform back-navigable single- and multi-select used by the wizard; Esc
+  yields `BACK`, and `menu` also appends a Back/Exit entry), `dim` (styled
+  secondary-text fragment, e.g. a dimmed AppID), `select_one_interactive`,
   `select_apps_interactive`, `effective_max_width`. Uses ANSI named colors
   only, so the terminal theme controls the actual rendering.
 - **`steam.py`** — backward-compat shim re-exporting the io/ surface
@@ -171,11 +181,15 @@ through `io/_vdf_util.ci_get()`.
   `games_with_scb_launch` / `missing_configs` / `orphan_configs`.
   `init_stub(target_path, name, force)` writes a minimal two-line stub.
 - **`compat_tools.py`** — `list_compat_tools(ctx) -> list[CompatTool]`.
-  Discovers Proton/GE-Proton/etc. from two sources: `compatibilitytools.d/`
-  (user-installed custom tools, one `compatibilitytool.vdf` each) and
-  `appmanifest_*.acf` filtered by `name.startswith("Proton")` (official
-  Proton builds Steam installs as apps). Used by the `config wizard`
-  picker so the user never has to type a tech_name by hand.
+  Discovers Proton/GE-Proton/etc. from two sources: custom tools (one
+  `compatibilitytool.vdf` each) found across every `compatibilitytools.d/`
+  Steam scans — the per-install `<steam_root>/compatibilitytools.d/` plus the
+  system-wide `/usr/share/steam` and `/usr/local/share/steam` dirs where
+  distro packages land (Arch/CachyOS `proton-cachyos`), with the per-install
+  root shadowing same-named system entries — and `appmanifest_*.acf` filtered
+  by `name.startswith("Proton")` (official Proton builds Steam installs as
+  apps). The system dirs are overridable via `STEAM_MANAGER_COMPAT_DIRS`. Used
+  by the `config wizard` picker so the user never types a tech_name by hand.
 - **`backups.py`** — `create_checkpoint(root, ts, files, manifest)`,
   `list_checkpoints(root)`, `extract_checkpoint(archive, targets)`,
   `prune_checkpoints(root, limit)`. Atomic via temp file + rename.
@@ -217,6 +231,29 @@ Shared CLI helpers (private to the cli/ layer):
 - **`_targets.py`** — `effective_target_spec`, `resolve_target_users`,
   `target_users_banner`: turn `--user`/`--all-users` flags into a concrete
   user list and a Rich-markup banner.
+
+The `config` editor is a **shared pure core with two front-ends**:
+
+- **`_wizard_core.py`** — the front-end-agnostic core. `Change` (frozen
+  key/old/new), `load_state(ctx)` (the single merged read; degrades to a
+  policy-only state with `steam_found=False` when no Steam is present), pure
+  `set_*` reducers returning a new `WizardState` (folded through
+  `_merge_pending`/`_is_noop`), and the single `apply(state)` write point.
+  Imports only `policy`, `io`, and UI-free `cli` siblings — **no questionary,
+  Rich, Typer, or Textual** — so the edit logic is unit-testable without a
+  terminal. **Drift is deliberately NOT computed here**: `_drift` reaches
+  `render` (→ questionary) via `_targets`, which would taint the pure core, so
+  the TUI computes drift in a UI-layer async worker instead.
+- **`_config_entry.py`** — `dispatch(classic, tui)`: chooses the front-end by
+  flag > `STEAM_MANAGER_CONFIG_UI` > default (`tui`). A non-TTY stream prints
+  the scriptable hint and exits 2 (never spins a UI into a dead pipe); a Textual
+  startup failure falls through to the same hint. `cli.tui` is imported lazily
+  here so non-TUI commands never load Textual.
+- **`tui/`** — the Textual front-end (`ConfigApp` + modal pickers + `app.tcss`),
+  the only package that imports `textual` (enforced by `test_architecture.py`).
+  One screen drives the `_wizard_core` reducers; **Save** calls `apply()` once.
+- **`_wizard.py`** — the classic questionary flow (`--classic`), also driving
+  `_wizard_core`.
 
 ## 5. Backup format
 
@@ -263,10 +300,19 @@ restore flow are documented in [`docs/REFERENCE.md`](REFERENCE.md#backups).
 ## 6. Build pipeline
 
 `scripts/build.sh` produces `dist/steam-manager` — a single-file standalone
-Linux x86_64 binary (~16 MB) via PyInstaller `--onefile`. The binary bundles
+Linux x86_64 binary (~20 MB) via PyInstaller `--onefile`. The binary bundles
 the Python runtime and every dependency, including the factory
 `policies.toml` and the parsed-at-runtime `appinfo.vdf`. It requires no
 Python or pip on the target system, only glibc.
+
+Textual needs two build flags: `--collect-submodules textual` (its widgets are
+lazy-loaded through a package `__getattr__`, which PyInstaller's static analysis
+misses — without this the TUI raises an import error at runtime inside the
+frozen bundle) and `--hidden-import platformdirs` (imported at App
+construction). The TUI stylesheet `app.tcss` is package data and rides the wheel
+via the existing `--collect-data steam_manager`. Verify a real build by opening
+the TUI in a terminal against the frozen binary — `pytest` runs the editable
+install and cannot catch a packaging-only failure.
 
 `scripts/install.sh` is the one-line installer published at
 `raw.githubusercontent.com/MatrixDJ96/steam-manager/main/scripts/install.sh`.
@@ -285,10 +331,16 @@ that section.
 
 ## 7. Testing
 
-223 tests under `tests/`, all driven by `pytest` with synthetic VDF and TOML
-fixtures, running in under one second. The `fake_steam` fixture in
-`conftest.py` builds a self-contained Steam tree in `tmp_path` so tests
-never touch the real Steam install.
+301 tests under `tests/`, driven by `pytest` with synthetic VDF and TOML
+fixtures. The `fake_steam` fixture in `conftest.py` builds a self-contained
+Steam tree in `tmp_path` so tests never touch the real Steam install.
+
+The Textual Pilot interaction tests (`tests/test_tui.py`) carry the `tui`
+marker and need `pytest-asyncio`; they drive the real `ConfigApp` via
+`app.run_test()`. `pytest -m 'not tui'` is the fast, Textual-free lane
+(sub-2s); CI runs the full suite. The pure config core (`_wizard_core`) is
+tested directly in `test_wizard_core.py` — no asyncio, no Textual — and the
+dispatch ladder in `test_config_entry.py`.
 
 Tests that need to bypass production paths set env vars honored by
 `cli/_common.py`:
@@ -299,6 +351,7 @@ Tests that need to bypass production paths set env vars honored by
 - `STEAM_MANAGER_USER_POLICY` — overrides the user policy file path.
 - `STEAM_MANAGER_SCB_DIR` — overrides the ScopeBuddy configs dir.
 - `STEAM_MANAGER_FORCE=1` — equivalent to passing `--force`.
+- `STEAM_MANAGER_CONFIG_UI` — picks the `config` editor front-end (`tui`/`classic`).
 
 Commands are exercised through `typer.testing.CliRunner` against `cli.app`.
 Rich output goes to a `StringIO` in tests, which strips ANSI; substring
@@ -307,13 +360,17 @@ assertions on table content work, but assertions on colors/styles do not.
 ### Architectural tests
 
 `tests/test_architecture.py` uses AST inspection to enforce the dependency
-rules listed in section 3. The five rules tested:
+rules listed in section 3. The rules tested:
 
 - `io/*.py` may not import from `cli/`, `render`, `policy`, `safety`
 - `policy.py` may not import from `cli/`, `io/`, `render`
 - `render.py` must not import any project module (only `models`, optional)
 - `safety.py` may not import from `cli/`, `render`, `policy`
 - `models.py` must not import any project module
+- `cli/` must consume `io/` only through its public (non-`_`) API
+- `textual` may be imported **only** under `cli/tui/`, and nothing outside
+  `cli/tui/` may import `cli.tui` at module scope (so non-TUI commands never
+  load Textual at startup)
 
 A future refactor that accidentally introduces a layer-crossing import
 (e.g. `io/scopebuddy.py` reaching for `render.error` "for convenience")

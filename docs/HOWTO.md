@@ -27,32 +27,31 @@ the string Steam expects in `config.vdf`; it is not resolved by
 `steam-manager`. If you don't know the right tech name, use the wizard
 (below) — it lists Proton builds actually installed on your system.
 
-## Pick a Proton with an interactive wizard
+## Pick a Proton with the interactive editor
 
 If typing the right `compat_tool` string by hand is error-prone (it is —
-Steam silently ignores an unrecognised name), run the wizard:
+Steam silently ignores an unrecognised name), open the editor:
 
 ```bash
-steam-manager config wizard
+steam-manager config              # full-screen Textual TUI (default)
+steam-manager config --classic    # the step-by-step prompt wizard
 ```
 
-The wizard runs a *show + targeted edit + confirm* loop: it first prints
-the current effective config, then lets you pick an area to edit (compat
-& launch / general / ignore list / reset), walks you through picker-based
-prompts with the current value pre-selected, shows a yellow diff table
-of what would change, and asks `Apply changes? Y/n` before writing. Then
-it loops back to the menu, so you can chain edits in one session and
-abort any one of them without leaving the wizard.
+The **TUI** shows the whole policy on one screen: a defaults bar, a
+type-to-filter table of installed games (each with its policy compat tool
+and launch options), a targets/backups pane, and a live **Pending** pane.
+Move with `↑`/`↓`, `c` edits the selected game's compat tool, `l` its
+launch options, `g`/`G` the games defaults, `Space` toggles ignore, `/`
+filters; `s` **Saves**. Save writes only `policies.toml` — the footer and
+drift line remind you to run `steam-manager apply` to push it onto Steam.
+The compat picker lists every Proton actually installed (custom builds in
+`compatibilitytools.d/` plus Steam's own official ones) by display name,
+so you never type a tech name.
 
-For compat tool, the picker lists every Proton found in
-`~/.steam/compatibilitytools.d/` (custom: GE-Proton, Proton-CachyOS, ...)
-plus every Proton installed by Steam itself as an app (official:
-Experimental, 9.0, ...), showing both the human display name and the
-tech name that Steam recognises in `config.vdf`. `[current]` marks the
-one currently active.
-
-Prefer the wizard when you don't already know the exact value to write;
-prefer `config set <key> <value>` when you do.
+Prefer `--classic` on an exotic terminal, or over SSH where the full TUI
+misbehaves. Over a pipe / non-interactive stream, `config` prints the
+`get`/`set`/`unset`/`path` hint and exits 2 instead of opening a UI — use
+`config set <key> <value>` in scripts.
 
 ## Inspect or edit the raw policy file
 
@@ -317,5 +316,5 @@ pip install -e ".[dev]"
 pytest                                   # 223 hermetic tests, &lt;2s
 ```
 
-The repository's `CLAUDE.md` documents project-specific quirks (NTFS+btrfs
+The repository's `AGENTS.md` documents project-specific quirks (NTFS+btrfs
 venv layout, `rich-click` integration, VDF case-insensitivity).

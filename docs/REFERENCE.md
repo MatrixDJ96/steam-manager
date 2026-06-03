@@ -68,8 +68,8 @@ Same five panels as `steam-manager --help`.
 
 | Command  | Description |
 |----------|-------------|
-| `list`   | List installed games with compat tool and per-user launch options. Drift rows are **bold**, conforming rows are **dim**. AppID and Name cells are clickable OSC 8 links. `--json` outputs machine-readable JSON instead of the table. |
-| `diff`   | Show planned changes vs policy (read-only). Exits 1 if drift exists. |
+| `list`   | List installed games with compat tool and per-user launch options, split into **Games** and **Applications** panels by Steam app type. Drift rows are **bold**, conforming rows are **dim**. AppID and Name cells are clickable OSC 8 links. `--json` outputs machine-readable JSON instead of the table (ungrouped, flat list). |
+| `diff`   | Show planned changes vs policy (read-only). Panels are labelled `Games · …` / `Applications · …` when changes span both kinds. Exits 1 if drift exists. |
 
 ### Apply
 
@@ -97,7 +97,7 @@ Same five panels as `steam-manager --help`.
 
 | Command  | Description |
 |----------|-------------|
-| `config` | Edit and inspect the user policy file (`~/.config/steam-manager/policies.toml`). With no sub-command, launches the wizard. Sub-commands: `get`, `set`, `unset`, `wizard`, `path`. |
+| `config` | Edit and inspect the user policy file (`~/.config/steam-manager/policies.toml`). With no sub-command, opens the interactive editor — the **Textual TUI** by default, or the classic prompt wizard with `--classic`. Sub-commands: `get`, `set`, `unset`, `wizard`, `path`. |
 | `update` | Self-update the binary to the latest GitHub release. `--check` (read-only), `--yes` (skip prompt), `--force` (reinstall same version). PyInstaller-only. |
 
 ### Global options
@@ -115,12 +115,21 @@ modifying operations preserve user comments (via `tomlkit`).
 
 | Sub-command                         | Behavior                                                                                                |
 |-------------------------------------|---------------------------------------------------------------------------------------------------------|
-| `config` *(no sub-command)*         | Launches the interactive `wizard`. The default for `steam-manager config`.                              |
+| `config` *(no sub-command)*         | Opens the interactive editor — Textual TUI by default, classic wizard with `--classic`. Non-TTY → exit 2 + scriptable hint. |
 | `config get <key>`                  | Print the effective value at a dotted key (factory + user merged). Exit 3 if missing.                   |
 | `config set <key> <value>`          | Set a dotted key. Type inference: `true`/`false` → bool, digits → int, else string.                     |
 | `config unset <key>`                | Remove a dotted key. Drops the parent table if it becomes empty.                                        |
-| `config wizard`                     | Explicit form of the default. Interactive picker-based flow; see the table below.                       |
+| `config wizard`                     | Explicit form of bare `config`. Accepts `--tui` / `--classic`.                                          |
 | `config path`                       | Print the user policy file path. Useful for `cat $(steam-manager config path)` or `$EDITOR $(...)`.     |
+
+The editor front-end is chosen, in order, by: an explicit `--tui` / `--classic`
+flag (mutually exclusive — both → exit 2), then `STEAM_MANAGER_CONFIG_UI=tui|classic`,
+then the built-in default (`tui`). On a non-interactive stream (a pipe, CI),
+`config` never launches a UI: it prints the `get`/`set`/`unset`/`path` hint and
+exits 2. The full-screen TUI shows the whole policy on one screen (defaults,
+a filterable games table, targets, a live Pending pane); **Save** writes
+`policies.toml` only — run `steam-manager apply` to push it onto Steam. The
+classic prompt flow below is reached via `--classic`.
 
 Dropped sub-commands (covered by the wizard or by external tools):
 
@@ -129,18 +138,16 @@ Dropped sub-commands (covered by the wizard or by external tools):
 - `config reset` → wizard entry "Reset to defaults", or `rm $(steam-manager config path)`.
 - `config ignore <appid>` → wizard entry "Toggle ignore list", or `config set overrides.<appid>.ignore true`.
 
-#### `config wizard` flow
+#### Classic wizard flow (`--classic`)
 
-The wizard is a flat menu of granular actions — every entry takes you directly to the relevant picker, with no intermediate "scope / target" cascade. Each iteration:
+The classic wizard is a flat menu of granular actions — every entry takes you directly to the relevant picker, with no intermediate "scope / target" cascade. Each iteration:
 
-1. **Pick an action** from the main menu (see table below).
+1. **Pick an action** from the main menu (see table below). The cursor re-opens on the entry you last chose. `Esc` at the main menu exits; `Esc` inside a picker (or its `← Back` entry) returns to the menu.
 2. **A breadcrumb header** shows `Editing: <setting> — [<scope>]` and the current value, so the picker always has context.
 3. **The picker** opens grouped by source where it makes sense (compat tool → `── Custom ── / ── Official ── / ── Special ──`; launch options → `── Templates ── / ── Special ──`). The cursor is pre-positioned on the current value.
-4. **A yellow diff table** lists the pending changes (key / from / to).
-5. **`Apply changes? Y/n`** — discarding leaves the file untouched.
-6. **Loops** back to the menu.
+4. **The edit is queued**, not written. Edits accumulate so you can make several before committing; re-picking a key's on-disk value cancels its queued edit.
 
-The current-configuration table is **not** rendered automatically; it's behind the explicit "Show current configuration" menu entry so the default screen is just the menu.
+Queued edits are written in one batch only when you choose **Apply pending changes (N)** (which appears, with a count, once at least one edit is queued); **Discard pending changes (N)** drops them. Exiting with unapplied edits asks for confirmation first. The current-configuration table is **not** rendered automatically; it's behind the explicit "Show current configuration" menu entry (which also lists any queued edits), so the default screen is just the menu.
 
 | Menu entry                                | What it does                                                                                                                  |
 |-------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
@@ -149,7 +156,7 @@ The current-configuration table is **not** rendered automatically; it's behind t
 | Change launch options (default…)          | Writes `games.launch_options` from a template list or freeform input.                                                         |
 | Change launch options (for one game)      | Asks which game, then writes `overrides.<appid>.launch_options`.                                                              |
 | Toggle ignore list                        | Multi-select over installed games; pre-checked = currently ignored. Diffs the two sets and emits add/remove changes.          |
-| Set target users                          | Multi-select with `active`/`*` sentinels and every account from `loginusers.vdf`. Writes `general.target_users`.              |
+| Set target users                          | Pick one mode — `active` (logged-in), `*` (all accounts), or "Specific accounts…"; the last opens a multi-select over the `loginusers.vdf` accounts. The modes are mutually exclusive. Writes `general.target_users`. |
 | Set max backups                           | Integer prompt (≥ 1). Writes `general.max_backups`.                                                                           |
 | Show current configuration                | Renders the full effective config as a sectioned table. No write.                                                             |
 | Reset to defaults                         | Deletes `~/.config/steam-manager/policies.toml` after explicit confirmation. Same as `config reset --yes`.                    |
@@ -185,7 +192,7 @@ and `--all-users` are mutually exclusive.
 |------|------------------------------------------------------|
 | 0    | OK / no drift                                        |
 | 1    | Drift detected or ScopeBuddy issues                  |
-| 2    | Steam is running, aborted                            |
+| 2    | Steam is running (write commands), or `config` on a non-interactive stream / conflicting `--tui` `--classic` |
 | 3    | Config parse error or mutually-exclusive flags       |
 | 4    | Write error (reserved for rollback path)             |
 
@@ -236,6 +243,12 @@ spaces work.
 If your terminal does not support OSC 8, use `steam-manager open &lt;appid&gt;`
 instead — it shells out to `xdg-open`.
 
+Tables size to their content and grow only as wide as they need, up to the
+terminal width — they never truncate a column while horizontal space is free,
+and never stretch with empty gaps on an ultrawide terminal. A terminal
+narrower than the content ellipsis-truncates the launch-option columns. `--help`
+text is capped at a fixed readable width regardless of terminal size.
+
 Visual conventions in `list`:
 
 - **Bold** row → the app's current state drifts from the policy and will be
@@ -254,10 +267,12 @@ remain.
 | `STEAM_MANAGER_POLICY_PATHS`   | Colon-separated list of TOML policy files (replaces user override).     |
 | `STEAM_MANAGER_BACKUP_ROOT`    | Override the default backup directory.                                  |
 | `STEAM_MANAGER_SCB_DIR`        | Override the ScopeBuddy configs dir (`~/.config/scopebuddy/games/steam/`). |
+| `STEAM_MANAGER_COMPAT_DIRS`    | Colon-separated list of system-wide `compatibilitytools.d/` dirs (replaces the built-in `/usr/share/steam` + `/usr/local/share/steam` paths). |
 | `STEAM_MANAGER_FORCE=1`        | Equivalent to passing `--force` (bypasses the Steam-running check).     |
 | `STEAM_MANAGER_INSTALL_DIR`    | Used by `scripts/install.sh` to override the default `~/.local/bin`.    |
 | `STEAM_MANAGER_VERSION`        | Used by `scripts/install.sh` to pin to a specific release tag.          |
 | `STEAM_MANAGER_USER_POLICY`    | Override the path written by `config set`/`unset` and the wizard.       |
+| `STEAM_MANAGER_CONFIG_UI`      | Pick the `config` editor front-end: `tui` or `classic`. A `--tui`/`--classic` flag overrides it; an unrecognized value is ignored. |
 | `STEAM_MANAGER_NO_UPDATE_NOTIFIER` | Silence the post-command "new release available" hint (any value).  |
 | `STEAM_MANAGER_UPDATE_REPO`    | Override the GitHub repo (`MatrixDJ96/steam-manager`) for `update`.     |
 | `STEAM_MANAGER_UPDATE_STATE`   | Override the notifier's cache file path (testing convenience).          |
