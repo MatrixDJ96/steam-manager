@@ -27,9 +27,11 @@ pyinstaller \
     --clean \
     --collect-data steam_manager \
     --collect-submodules rich_click \
+    --collect-submodules textual \
     --hidden-import vdf \
     --hidden-import questionary \
     --hidden-import tomlkit \
+    --hidden-import platformdirs \
     src/steam_manager/__main__.py
 
 # Emit a SHA256 checksum alongside the binary so the installer can verify it.

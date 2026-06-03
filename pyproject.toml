@@ -10,18 +10,30 @@ requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Mattia Rombi" }]
 dependencies = [
-    "typer >= 0.12",
-    "rich >= 13",
-    "rich-click >= 1.7",
+    # cli/_rich.py re-classes Typer's Click command tree to rich-click's
+    # RichGroup/RichCommand (a `__class__` swap) and patches its
+    # rich_click.rich_panel table builders. That couples us to a window of
+    # versions: click 8.2 changed the Command layout so the swap raises
+    # "object layout differs"; rich_click.rich_panel exists only in 1.9+.
+    "click >= 8.1, < 8.2",
+    "typer >= 0.12, < 0.16",
+    # textual 8.x requires rich >= 14.2; the live venv runs rich 15 with the
+    # _rich.py rich-click __class__ swap intact, so the floor is safe.
+    "rich >= 14.2",
+    "rich-click >= 1.9, < 2",
     "vdf >= 3.4",
     "questionary >= 2.0",
     "tomlkit >= 0.13",
+    # Textual TUI for `config` (cli/tui/). <9 caps the next major, mirroring the
+    # click/typer/rich-click pinning discipline.
+    "textual >= 8.2, < 9",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest >= 8",
     "pytest-cov",
+    "pytest-asyncio",
 ]
 build = [
     "pyinstaller >= 6.0",
@@ -36,6 +48,10 @@ packages = ["src/steam_manager"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra -q"
+asyncio_mode = "auto"
+markers = [
+    "tui: Textual Pilot interaction tests (slow lane; run `-m 'not tui'` to skip)",
+]
 
 [tool.coverage.run]
 source = ["steam_manager"]
