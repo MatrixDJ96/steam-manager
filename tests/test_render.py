@@ -1,4 +1,19 @@
+import os
+import shutil
+
 from steam_manager import render
+
+
+def test_effective_max_width_uses_full_terminal(monkeypatch):
+    monkeypatch.setattr(shutil, "get_terminal_size",
+                        lambda fallback=(0, 0): os.terminal_size((240, 50)))
+    assert render.effective_max_width() == 240
+
+
+def test_effective_max_width_falls_back_without_terminal(monkeypatch):
+    monkeypatch.setattr(shutil, "get_terminal_size",
+                        lambda fallback=(0, 0): os.terminal_size((0, 0)))
+    assert render.effective_max_width() == render.TABLE_WIDTH
 
 
 def test_audit_table_renders_rows():
@@ -51,6 +66,44 @@ def test_diff_table_skips_empty_section():
     assert "Launch options" in output
 
 
+def test_diff_table_groups_by_section_games_first():
+    """Mixed games + applications: each panel gets a label prefix, games first."""
+    changes = [
+        {"appid": "111", "name": "Game One", "field": "compat_tool",
+         "old": None, "new": "proton_9", "user": None, "section": "games"},
+        {"appid": "999", "name": "OBS", "field": "compat_tool",
+         "old": None, "new": "proton_experimental", "user": None,
+         "section": "applications"},
+    ]
+    output = render.diff_table_str(changes)
+    assert "Games" in output
+    assert "Applications" in output
+    assert output.index("Games") < output.index("Applications")
+
+
+def test_diff_table_single_section_has_no_prefix():
+    """All changes in one section: no Games/Applications label prefix."""
+    changes = [
+        {"appid": "111", "name": "Game One", "field": "compat_tool",
+         "old": None, "new": "proton_9", "user": None, "section": "games"},
+    ]
+    output = render.diff_table_str(changes)
+    assert "Compat tool" in output
+    assert "Games" not in output
+
+
+def test_diff_table_without_section_key_renders_plain():
+    """The restore preview emits changes with no 'section' key — render must
+    fall back to the unlabelled, ungrouped layout (no qualifier separator)."""
+    changes = [
+        {"appid": "111", "name": "Game One", "field": "compat_tool",
+         "old": "proton_8", "new": "proton_9", "user": None},
+    ]
+    output = render.diff_table_str(changes)
+    assert "Compat tool" in output
+    assert "·" not in output
+
+
 def test_simple_table_str_with_simple_columns():
     output = render.simple_table_str(
         "My Table",
@@ -71,6 +124,121 @@ def test_simple_table_str_with_justify():
     )
     assert "Test" in output
     assert "AppID" in output
+
+
+def test_select_one_interactive_ignores_unknown_default(monkeypatch):
+    """A default matching no choice must be dropped, not passed to questionary
+    (which raises ValueError) — e.g. a compat_tool no longer installed."""
+    import questionary
+    captured = {}
+
+    class _Q:
+        def ask(self):
+            return None
+
+    def _fake_select(prompt, choices, default=None):
+        captured["default"] = default
+        return _Q()
+
+    monkeypatch.setattr(questionary, "select", _fake_select)
+    render.select_one_interactive("Select:", [("A", "a"), ("B", "b")],
+                                  default="not-a-choice")
+    assert captured["default"] is None
+
+
+def test_select_one_interactive_keeps_valid_default(monkeypatch):
+    import questionary
+    captured = {}
+
+    class _Q:
+        def ask(self):
+            return None
+
+    def _fake_select(prompt, choices, default=None):
+        captured["default"] = default
+        return _Q()
+
+    monkeypatch.setattr(questionary, "select", _fake_select)
+    render.select_one_interactive("Select:", [("A", "a"), ("B", "b")], default="b")
+    assert captured["default"] == "b"
+
+
+class _FakeQuestion:
+    """Stand-in for a questionary Question: exposes the mutable key_bindings
+    menu() pokes for its Esc binding, and a fixed `.ask()` result."""
+
+    def __init__(self, answer):
+        self._answer = answer
+
+        class _KB:
+            def add(self, *a, **k):
+                return lambda fn: fn
+
+        class _App:
+            key_bindings = _KB()
+
+        self.application = _App()
+
+    def ask(self):
+        return self._answer
+
+
+def test_menu_appends_back_entry_and_returns_value(monkeypatch):
+    import questionary
+    captured = {}
+
+    def _fake_select(title, choices, default=None, **kw):
+        captured["choices"] = choices
+        captured["default"] = default
+        return _FakeQuestion("chosen")
+
+    monkeypatch.setattr(questionary, "select", _fake_select)
+    result = render.menu("t", [("A", "a"), ("B", "b")], default="a")
+    assert result == "chosen"
+    backs = [c for c in captured["choices"]
+             if isinstance(c, questionary.Choice) and c.value is render.BACK]
+    assert len(backs) == 1
+    assert captured["default"] == "a"
+
+
+def test_menu_returns_back_on_ctrl_c(monkeypatch):
+    import questionary
+    monkeypatch.setattr(questionary, "select",
+                        lambda *a, **k: _FakeQuestion(None))  # None = Ctrl-C
+    assert render.menu("t", [("A", "a")]) is render.BACK
+
+
+def test_menu_drops_unknown_default(monkeypatch):
+    import questionary
+    captured = {}
+
+    def _fake_select(title, choices, default=None, **kw):
+        captured["default"] = default
+        return _FakeQuestion(render.BACK)
+
+    monkeypatch.setattr(questionary, "select", _fake_select)
+    render.menu("t", [("A", "a")], default="not-a-choice")
+    assert captured["default"] is None
+
+
+def test_multiselect_returns_selection(monkeypatch):
+    import questionary
+    monkeypatch.setattr(questionary, "checkbox",
+                        lambda *a, **k: _FakeQuestion(["x", "y"]))
+    assert render.multiselect("t", [("X", "x"), ("Y", "y")]) == ["x", "y"]
+
+
+def test_multiselect_returns_back_on_cancel(monkeypatch):
+    import questionary
+    monkeypatch.setattr(questionary, "checkbox", lambda *a, **k: _FakeQuestion(None))
+    assert render.multiselect("t", [("X", "x")]) is render.BACK
+
+
+def test_multiselect_empty_confirm_is_not_back(monkeypatch):
+    # Confirming with nothing ticked is a real (empty) selection, not a cancel.
+    import questionary
+    monkeypatch.setattr(questionary, "checkbox", lambda *a, **k: _FakeQuestion([]))
+    assert render.multiselect("t", [("X", "x")]) == []
 
 
 def test_select_items_interactive_exists():

@@ -54,7 +54,8 @@ def install_rich_click(app):
     rich_click.rich_click.PADDING_ERRORS_SUGGESTION = (0, 1, 1, 1)
     rich_click.rich_click.PADDING_ERRORS_PANEL = (0, 0, 0, 0)
 
-    rich_click.rich_click.MAX_WIDTH = render.effective_max_width()
+    rich_click.rich_click.MAX_WIDTH = min(render.effective_max_width(),
+                                          render.MAX_HELP_WIDTH)
 
     if not getattr(_rp, "_steam_manager_aligned", False):
         _orig_opt_get_table = _rp.RichOptionPanel.get_table

@@ -9,6 +9,7 @@ from typing import Iterable
 from urllib.parse import quote
 
 import questionary
+from prompt_toolkit.keys import Keys
 from rich import box
 from rich.console import Console
 from rich.panel import Panel
@@ -34,6 +35,10 @@ _RICH_MARKUP_RE = re.compile(r"\[/?[^\[\]]*\]")
 # Fallback when Rich can't detect terminal width (tests, piped output).
 TABLE_WIDTH = 100
 
+# Help text (rich-click) reads best at a bounded measure, so it is capped even
+# when the terminal is wider. Data tables are not — they size to content.
+MAX_HELP_WIDTH = 120
+
 # Shared rounded-corner box style for every table.
 TABLE_BOX = box.ROUNDED
 
@@ -50,6 +55,12 @@ console = Console()
 
 def _make_inner_table() -> Table:
     """Inner Table for use inside a Panel — no own box/borders, no own title.
+
+    Sizes to its content (`expand=False`): the table grows just wide enough to
+    fit its columns and stops, so it takes horizontal space only when the
+    content needs it and never leaves columns truncated while space is free.
+    Bounded by the Console width, so a narrow terminal still ellipsis-truncates.
+
     Per-row styling (bold/dim/...) is applied via `Table.add_row(..., style=...)`
     by callers when they have semantic info (e.g. `list` marks drift rows bold)."""
     return Table(
@@ -58,7 +69,7 @@ def _make_inner_table() -> Table:
         show_lines=False,
         box=None,
         padding=(0, 2),
-        expand=True,
+        expand=False,
     )
 
 
@@ -72,22 +83,21 @@ def _panel(content, title: str, *, border_style: str = PANEL_BORDER_STYLE) -> Pa
         box=TABLE_BOX,
         border_style=border_style,
         padding=(0, 1),
+        expand=False,
     )
 
 
 def effective_max_width() -> int:
-    """Max width for tables/panels.
+    """Width ceiling for tables/panels — the full terminal width.
 
-    - < 160 cols: use full width.
-    - >= 160 cols (4K/wide): cap at half-screen, min 120, to stay readable.
-    - No terminal (CliRunner, pipe): TABLE_WIDTH = 100.
+    Tables size to their content (see `_make_inner_table`), so this is only an
+    upper bound: a table never grows past the terminal, and only that wide when
+    its content needs it. No terminal (CliRunner, pipe): TABLE_WIDTH = 100.
     """
     cols = shutil.get_terminal_size(fallback=(0, 0)).columns
     if cols <= 0:
         return TABLE_WIDTH
-    if cols < 160:
-        return cols
-    return max(120, cols // 2)
+    return cols
 
 
 def _buffer_width() -> int:
@@ -126,75 +136,90 @@ def audit_table_str(rows: Iterable[tuple]) -> str:
     return buf.getvalue()
 
 
+# Display order + labels for the games/applications grouping. A change with
+# no "section" key (e.g. the restore preview, which diffs raw VDF and has no
+# app-type info) sorts into a single unlabelled group, preserving the
+# original layout. The label prefix only appears when both kinds are present.
+SECTION_ORDER = ("games", "applications")
+SECTION_LABELS = {"games": "Games", "applications": "Applications"}
+
+
+def _diff_col_min(changes: list[dict]) -> dict[str, int]:
+    """Max display width per column across all changes, so every diff sub-table
+    shares the same min-widths and the panels line up across sections."""
+    def disp(v) -> int:
+        return len(str(v) if v is not None else "<none>")
+    if not changes:
+        return {"appid": 5, "name": 4, "from": 4, "to": 2}
+    return {
+        "appid": max(5, *(disp(c["appid"]) for c in changes)),
+        "name":  max(4, *(disp(c["name"]) for c in changes)),
+        "from":  max(4, *(disp(c["old"]) for c in changes)),
+        "to":    max(2, *(disp(c["new"]) for c in changes)),
+    }
+
+
+def _diff_table(items: list[dict], col_min: dict[str, int]) -> Table:
+    """A four-column From→To table for one group of changes."""
+    t = _make_inner_table()
+    t.add_column("AppID", justify="right", style="bold cyan", no_wrap=True,
+                 min_width=col_min["appid"])
+    t.add_column("Name", no_wrap=True, min_width=col_min["name"])
+    t.add_column("From", style="red", no_wrap=True, min_width=col_min["from"])
+    t.add_column("To", style="green", no_wrap=True, min_width=col_min["to"])
+    for c in items:
+        old = c["old"] if c["old"] is not None else "[dim]<none>[/dim]"
+        new = c["new"] if c["new"] is not None else "[dim]<none>[/dim]"
+        t.add_row(link_cell(c.get("compatdata_path", ""), c["appid"]),
+                  link_cell(c.get("install_path", ""), c["name"]), old, new)
+    return t
+
+
+def _diff_field_panels(console: Console, section_changes: list[dict],
+                       prefix: str | None, col_min: dict[str, int]) -> None:
+    """Print one section's panels: Compat tool, then Launch options per user."""
+    def titled(title: str) -> str:
+        return f"{prefix} [dim]·[/dim] {title}" if prefix else title
+
+    compat = [c for c in section_changes if c["field"] == "compat_tool"]
+    if compat:
+        console.print(_panel(_diff_table(compat, col_min), titled("Compat tool"),
+                             border_style=PANEL_BORDER_WARN))
+
+    by_user: dict[str, list[dict]] = {}
+    for c in section_changes:
+        if c["field"] == "launch_options":
+            by_user.setdefault(c.get("user") or "-", []).append(c)
+    multi_user = len(by_user) > 1
+    for user, items in by_user.items():
+        title = (f"Launch options [dim]—[/dim] [cyan]user[/cyan]:[bold cyan]{user}[/bold cyan]"
+                 if multi_user else "Launch options")
+        console.print(_panel(_diff_table(items, col_min), titled(title),
+                             border_style=PANEL_BORDER_WARN))
+
+
 def diff_table_str(changes: list[dict]) -> str:
-    """Renders diff output grouped by field type and (for launch options) by user.
-    Drift is a warning state, so the wrapping panels use a yellow border.
+    """Renders diff output grouped by games/applications, then by field type and
+    (for launch options) by user. Drift is a warning state, so the wrapping
+    panels use a yellow border.
 
     All sub-tables share the same column widths (computed from all changes at once)
-    so the columns line up visually across the multiple panels."""
+    so the columns line up visually across the multiple panels. The games/apps
+    label is shown only when changes span both kinds; a single kind (or changes
+    without a `section`, as from `restore`) renders without the prefix."""
     buf = StringIO()
     local = Console(file=buf, force_terminal=_stdout_is_tty(), width=_buffer_width())
+    col_min = _diff_col_min(changes)
 
-    compat_changes = [c for c in changes if c["field"] == "compat_tool"]
-    launch_changes = [c for c in changes if c["field"] == "launch_options"]
-
-    # Compute max content width per column ACROSS all sub-tables, so each table's
-    # columns get the same min_width and the result lines up between panels.
-    def _disp_len(v) -> int:
-        return len(str(v) if v is not None else "<none>")
-
-    all_changes = compat_changes + launch_changes
-    if all_changes:
-        col_min = {
-            "appid": max(5, *(_disp_len(c["appid"]) for c in all_changes)),
-            "name":  max(4, *(_disp_len(c["name"]) for c in all_changes)),
-            "from":  max(4, *(_disp_len(c["old"]) for c in all_changes)),
-            "to":    max(2, *(_disp_len(c["new"]) for c in all_changes)),
-        }
-    else:
-        col_min = {"appid": 5, "name": 4, "from": 4, "to": 2}
-
-    def _add_columns(t):
-        t.add_column("AppID", justify="right", style="bold cyan", no_wrap=True,
-                     min_width=col_min["appid"])
-        t.add_column("Name", no_wrap=True, min_width=col_min["name"])
-        t.add_column("From", style="red", no_wrap=True, min_width=col_min["from"])
-        t.add_column("To", style="green", no_wrap=True, min_width=col_min["to"])
-
-    if compat_changes:
-        t = _make_inner_table()
-        _add_columns(t)
-        for c in compat_changes:
-            old = c["old"] if c["old"] is not None else "[dim]<none>[/dim]"
-            new = c["new"] if c["new"] is not None else "[dim]<none>[/dim]"
-            appid_cell = link_cell(c.get("compatdata_path", ""), c["appid"])
-            name_cell = link_cell(c.get("install_path", ""), c["name"])
-            t.add_row(appid_cell, name_cell, old, new)
-        local.print(_panel(t, "Compat tool", border_style=PANEL_BORDER_WARN))
-
-    # Group launch changes by user
-    by_user: dict[str, list[dict]] = {}
-    for c in launch_changes:
-        by_user.setdefault(c.get("user") or "-", []).append(c)
-
-    user_count = len(by_user)
-    for user, items in by_user.items():
-        if user_count > 1:
-            title = (
-                f"Launch options [dim]—[/dim] "
-                f"[cyan]user[/cyan]:[bold cyan]{user}[/bold cyan]"
-            )
-        else:
-            title = "Launch options"
-        t = _make_inner_table()
-        _add_columns(t)
-        for c in items:
-            old = c["old"] if c["old"] is not None else "[dim]<none>[/dim]"
-            new = c["new"] if c["new"] is not None else "[dim]<none>[/dim]"
-            appid_cell = link_cell(c.get("compatdata_path", ""), c["appid"])
-            name_cell = link_cell(c.get("install_path", ""), c["name"])
-            t.add_row(appid_cell, name_cell, old, new)
-        local.print(_panel(t, title, border_style=PANEL_BORDER_WARN))
+    by_section: dict[str | None, list[dict]] = {}
+    for c in changes:
+        by_section.setdefault(c.get("section"), []).append(c)
+    ordered = ([k for k in SECTION_ORDER if k in by_section]
+               + [k for k in by_section if k not in SECTION_ORDER])
+    show_prefix = len(by_section) > 1
+    for skey in ordered:
+        prefix = SECTION_LABELS.get(skey) if show_prefix else None
+        _diff_field_panels(local, by_section[skey], prefix, col_min)
 
     return buf.getvalue()
 
@@ -294,20 +319,136 @@ def select_one_interactive(prompt: str, choices: list, default: str | None = Non
       formatted titles (`title=[(style, text), ...]`) that render colours
       and dim/bold inside the picker.
 
-    `default` pre-positions the cursor on the choice whose value matches.
+    `default` pre-positions the cursor on the choice whose value matches. A
+    `default` that matches no selectable choice is ignored (the picker just
+    starts at the top) — questionary would otherwise raise, so a stale current
+    value (e.g. a compat_tool no longer installed) must not crash the picker.
 
     Returns the selected value, or None if cancelled.
     """
     qchoices: list = []
+    selectable: set = set()
     for item in choices:
         if item is None:
             qchoices.append(questionary.Separator())
-        elif isinstance(item, (questionary.Choice, questionary.Separator)):
+        elif isinstance(item, questionary.Separator):
+            qchoices.append(item)
+        elif isinstance(item, questionary.Choice):
+            qchoices.append(item)
+            if not item.disabled:
+                selectable.add(item.value)
+        else:
+            label, value = item
+            qchoices.append(questionary.Choice(title=label, value=value))
+            selectable.add(value)
+    if default not in selectable:
+        default = None
+    return questionary.select(prompt, choices=qchoices, default=default).ask()
+
+
+class _Back:
+    """Sentinel result meaning the user backed out of a `menu()` — via the
+    Back/Exit entry, the Esc key, or Ctrl-C. Callers test `result is BACK`."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "BACK"
+
+
+BACK = _Back()
+
+# Shown after every menu title so the controls are always discoverable.
+_MENU_INSTRUCTION = "↑↓ move · Enter select · Esc back"
+
+
+def menu(
+    title: str,
+    options: list,
+    *,
+    default: str | None = None,
+    back_label: str = "← Back",
+    instruction: str = _MENU_INSTRUCTION,
+) -> object:
+    """Single-select menu with one uniform layout and reliable back-navigation.
+
+    `options` entries are each a `(label, value)` pair, `None` (a blank
+    separator), or a passed-through `questionary.Separator` / `questionary.Choice`.
+    A `back_label` entry is appended automatically after a divider (use e.g.
+    "Exit" for a top-level menu); the menu always offers a visible way out.
+
+    Returns the selected value, or `BACK` when the user backs out — through the
+    Back entry, the Esc key, or Ctrl-C — so every caller handles a single exit
+    case. `default` pre-positions the cursor and is ignored if it matches no
+    selectable entry (questionary would otherwise raise)."""
+    qchoices: list = []
+    selectable: set = set()
+    for item in options:
+        if item is None:
+            qchoices.append(questionary.Separator())
+        elif isinstance(item, questionary.Separator):
+            qchoices.append(item)
+        elif isinstance(item, questionary.Choice):
+            qchoices.append(item)
+            if not item.disabled:
+                selectable.add(item.value)
+        else:
+            label, value = item
+            qchoices.append(questionary.Choice(title=label, value=value))
+            selectable.add(value)
+    qchoices.append(questionary.Separator())
+    qchoices.append(questionary.Choice(title=back_label, value=BACK))
+    if default not in selectable:
+        default = None
+
+    question = questionary.select(
+        title, choices=qchoices, default=default, instruction=instruction,
+    )
+    # questionary binds only Ctrl-C / Ctrl-Q; wire Esc to the same back result.
+    # Non-eager so prompt_toolkit can still disambiguate arrow-key escape
+    # sequences (which also start with Esc) before firing.
+    question.application.key_bindings.add(Keys.Escape)(
+        lambda event: event.app.exit(result=BACK)
+    )
+    answer = question.ask()  # None on Ctrl-C
+    return BACK if answer is None else answer
+
+
+_MULTISELECT_INSTRUCTION = "Space toggle · ↑↓ move · Enter confirm · Esc cancel"
+
+
+def multiselect(
+    title: str,
+    options: list,
+    *,
+    instruction: str = _MULTISELECT_INSTRUCTION,
+) -> object:
+    """Multi-select checkbox with one concise layout and Esc-to-cancel.
+
+    `options` entries are `(label, value)` pairs or passed-through
+    `questionary.Choice` (use a Choice for `checked=` state or a styled title).
+    Returns the list of selected values, or `BACK` when cancelled (Esc / Ctrl-C).
+    An empty *confirmed* selection returns `[]` — distinct from a cancel — so a
+    caller can tell "deselect everything" from "never mind"."""
+    qchoices: list = []
+    for item in options:
+        if isinstance(item, (questionary.Choice, questionary.Separator)):
             qchoices.append(item)
         else:
             label, value = item
             qchoices.append(questionary.Choice(title=label, value=value))
-    return questionary.select(prompt, choices=qchoices, default=default).ask()
+    question = questionary.checkbox(title, choices=qchoices, instruction=instruction)
+    question.application.key_bindings.add(Keys.Escape)(
+        lambda event: event.app.exit(result=BACK)
+    )
+    answer = question.ask()  # None on Ctrl-C
+    return BACK if answer is None else answer
+
+
+def dim(text: str) -> tuple[str, str]:
+    """A `(style, text)` fragment rendered dim — for the secondary part of a
+    formatted picker title (e.g. an AppID after a game name)."""
+    return ("fg:ansibrightblack", text)
 
 
 def prompt_text(message: str, default: str = "") -> str | None:
