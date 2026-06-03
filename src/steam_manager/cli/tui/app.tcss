@@ -1,0 +1,85 @@
+/* Stylesheet for the `steam-manager config` Textual TUI.
+   Shipped as package data (rides the wheel + PyInstaller --collect-data). */
+
+Screen {
+    layout: vertical;
+}
+
+#drift {
+    height: 1;
+    padding: 0 1;
+    color: $warning;
+}
+
+#defaults {
+    height: 5;
+}
+
+.card {
+    width: 1fr;
+    height: 100%;
+    border: round $panel;
+    padding: 0 1;
+}
+
+#body {
+    height: 1fr;
+}
+
+#games-pane {
+    width: 2fr;
+}
+
+#filter {
+    height: 3;
+}
+
+#empty-note {
+    height: auto;
+    padding: 0 1;
+    color: $warning;
+}
+
+#settings {
+    width: 1fr;
+    border: round $panel;
+    padding: 0 1;
+}
+
+.setting {
+    height: auto;
+    padding: 1 0;
+}
+
+#pending-title {
+    height: 1;
+    padding: 0 1;
+    text-style: bold;
+}
+
+#pending {
+    height: 8;
+}
+
+ModalScreen {
+    align: center middle;
+}
+
+.modal {
+    width: 72;
+    height: auto;
+    max-height: 80%;
+    padding: 1 2;
+    border: round $accent;
+    background: $surface;
+}
+
+.modal-title {
+    text-style: bold;
+    padding-bottom: 1;
+}
+
+.modal-hint {
+    color: $warning;
+    padding-top: 1;
+}

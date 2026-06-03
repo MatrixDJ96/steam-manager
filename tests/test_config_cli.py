@@ -61,9 +61,9 @@ def test_config_get_prints_user_override(user_policy):
 def test_config_get_falls_back_to_factory_when_no_user_override(user_policy, monkeypatch):
     # User file empty / absent → get must still return the factory value.
     monkeypatch.delenv("STEAM_MANAGER_POLICY_PATHS", raising=False)
-    result = runner.invoke(cli.app, ["config", "get", "games.compat_tool"])
+    result = runner.invoke(cli.app, ["config", "get", "games.launch_options"])
     assert result.exit_code == 0
-    assert "Proton-CachyOS Latest" in result.stdout
+    assert "scopebuddy -- %command%" in result.stdout
 
 
 def test_config_get_missing_key_exits_3(user_policy):
@@ -85,27 +85,24 @@ def test_config_unset_missing_key_exits_3(user_policy):
     assert result.exit_code == 3
 
 
-def test_config_no_subcommand_launches_wizard(user_policy, monkeypatch):
-    """`steam-manager config` with no sub-command opens the wizard."""
+def test_config_no_subcommand_launches_classic_wizard(user_policy, monkeypatch):
+    """`steam-manager config --classic` opens the classic questionary wizard.
+
+    The TTY check is forced True because CliRunner's captured streams report
+    isatty() == False (which would otherwise route to the non-TTY hint)."""
     called = {"n": 0}
-
-    def fake_run():
-        called["n"] += 1
-
-    monkeypatch.setattr("steam_manager.cli._wizard.run", fake_run)
-    result = runner.invoke(cli.app, ["config"])
+    monkeypatch.setattr("steam_manager.cli._config_entry._ui_is_interactive", lambda: True)
+    monkeypatch.setattr("steam_manager.cli._wizard.run", lambda: called.__setitem__("n", called["n"] + 1))
+    result = runner.invoke(cli.app, ["config", "--classic"])
     assert result.exit_code == 0
     assert called["n"] == 1
 
 
-def test_config_wizard_explicit_launches_wizard(user_policy, monkeypatch):
-    """`steam-manager config wizard` is the explicit form of the default."""
+def test_config_wizard_explicit_launches_classic_wizard(user_policy, monkeypatch):
+    """`steam-manager config wizard --classic` is the explicit classic form."""
     called = {"n": 0}
-
-    def fake_run():
-        called["n"] += 1
-
-    monkeypatch.setattr("steam_manager.cli._wizard.run", fake_run)
-    result = runner.invoke(cli.app, ["config", "wizard"])
+    monkeypatch.setattr("steam_manager.cli._config_entry._ui_is_interactive", lambda: True)
+    monkeypatch.setattr("steam_manager.cli._wizard.run", lambda: called.__setitem__("n", called["n"] + 1))
+    result = runner.invoke(cli.app, ["config", "wizard", "--classic"])
     assert result.exit_code == 0
     assert called["n"] == 1

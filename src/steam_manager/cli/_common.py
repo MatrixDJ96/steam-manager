@@ -5,7 +5,7 @@ This module is the project-internal counterpart to pipx's
 but not by io/ (which must not depend on the CLI layer).
 
 Env-var overrides honored here are documented in `docs/REFERENCE.md` and
-in `CLAUDE.md` (Tests section). Tests rely on them to redirect filesystem
+in `AGENTS.md` (Tests section). Tests rely on them to redirect filesystem
 side effects into `tmp_path`.
 """
 from __future__ import annotations
@@ -34,6 +34,16 @@ def steam_root() -> Path | None:
     """Honor STEAM_MANAGER_STEAM_ROOT (used by tests + advanced users)."""
     override = os.environ.get("STEAM_MANAGER_STEAM_ROOT")
     return Path(override) if override else None
+
+
+def config_ui_mode() -> str | None:
+    """Honor STEAM_MANAGER_CONFIG_UI = tui|classic (used by tests + users).
+
+    An unrecognized value returns None so the built-in default still applies —
+    an env typo never silently picks a UI.
+    """
+    val = (os.environ.get("STEAM_MANAGER_CONFIG_UI") or "").strip().lower()
+    return val if val in ("tui", "classic") else None
 
 
 def policy_paths() -> list[Path]:

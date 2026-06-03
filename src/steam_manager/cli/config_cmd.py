@@ -70,24 +70,38 @@ def _merged_doc() -> tomlkit.TOMLDocument:
 
 
 @config_app.callback()
-def config_callback(ctx: typer.Context) -> None:
-    """Default entry: when `steam-manager config` is invoked with no
-    sub-command (and no `--help`), open the wizard.
-    """
+def config_callback(
+    ctx: typer.Context,
+    classic: bool = typer.Option(
+        False, "--classic/--no-classic",
+        help="Use the classic prompt-based wizard instead of the TUI.",
+    ),
+    tui: bool = typer.Option(
+        False, "--tui/--no-tui",
+        help="Use the full-screen Textual TUI.",
+    ),
+) -> None:
+    """Default entry: `steam-manager config` with no sub-command opens the
+    interactive editor (Textual TUI or the classic wizard)."""
     if ctx.invoked_subcommand is None:
-        from steam_manager.cli import _wizard
-        _wizard.run()
+        from steam_manager.cli import _config_entry
+        _config_entry.dispatch(classic=classic, tui=tui)
 
 
 @config_app.command()
-def wizard() -> None:
-    """Launch the interactive wizard.
-
-    Identical to running `steam-manager config` with no sub-command —
-    the explicit form exists so the verb shows up in `--help`.
-    """
-    from steam_manager.cli import _wizard
-    _wizard.run()
+def wizard(
+    classic: bool = typer.Option(
+        False, "--classic/--no-classic",
+        help="Use the classic prompt-based wizard instead of the TUI.",
+    ),
+    tui: bool = typer.Option(
+        False, "--tui/--no-tui",
+        help="Use the full-screen Textual TUI.",
+    ),
+) -> None:
+    """Open the interactive config editor (explicit form of bare `config`)."""
+    from steam_manager.cli import _config_entry
+    _config_entry.dispatch(classic=classic, tui=tui)
 
 
 @config_app.command()

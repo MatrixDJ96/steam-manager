@@ -1,6 +1,6 @@
 """Architectural rules — enforced via AST inspection of every module.
 
-The package is split into layers (see CLAUDE.md "Architecture"):
+The package is split into layers (see AGENTS.md "Architecture"):
 
   cli/    can import: io/, policy, safety, render, models, __init__
   io/     can import: models  (and stdlib + vdf + tomlkit + tomllib)
@@ -143,4 +143,61 @@ def test_cli_does_not_import_io_privates():
     assert not violations, (
         "cli/ imported private io/ symbols (leaked-private antipattern): "
         + ", ".join(f"{f}: {m}.{n}" for f, m, n in violations)
+    )
+
+
+# --- textual is confined to cli/tui/ ---------------------------------------
+
+_TUI_DIR = SRC / "cli" / "tui"
+
+
+def _imports_textual(file_path: Path) -> bool:
+    tree = ast.parse(file_path.read_text())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if any(a.name == "textual" or a.name.startswith("textual.")
+                   for a in node.names):
+                return True
+        elif isinstance(node, ast.ImportFrom):
+            if node.module and (node.module == "textual"
+                                or node.module.startswith("textual.")):
+                return True
+    return False
+
+
+def test_textual_confined_to_cli_tui():
+    """Textual may be imported ONLY under cli/tui/. Keeping it out of every
+    other module is what lets `--version`, `list`, and `config get` run without
+    loading a heavy TUI toolkit, and keeps the non-TTY/headless path cheap."""
+    violators = [
+        str(f.relative_to(SRC))
+        for f in SRC.rglob("*.py")
+        if "__pycache__" not in f.parts
+        and _TUI_DIR not in f.parents
+        and _imports_textual(f)
+    ]
+    assert not violators, f"textual imported outside cli/tui/: {violators}"
+
+
+def test_cli_tui_not_imported_at_module_scope_elsewhere():
+    """Nothing outside cli/tui/ may import cli.tui at MODULE scope — the
+    dispatcher imports it lazily inside a function, so non-TUI commands never
+    drag Textual in at startup."""
+    violators: list[str] = []
+    for f in SRC.rglob("*.py"):
+        if "__pycache__" in f.parts or _TUI_DIR in f.parents:
+            continue
+        for node in ast.parse(f.read_text()).body:  # module scope only
+            mods: list[str] = []
+            if isinstance(node, ast.Import):
+                mods = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                mods = [node.module]
+                if node.module == "steam_manager.cli":
+                    mods += [f"steam_manager.cli.{a.name}" for a in node.names]
+            if any(m == "steam_manager.cli.tui" or m.startswith("steam_manager.cli.tui.")
+                   for m in mods):
+                violators.append(str(f.relative_to(SRC)))
+    assert not violators, (
+        f"cli.tui imported at module scope outside cli/tui/: {violators}"
     )
