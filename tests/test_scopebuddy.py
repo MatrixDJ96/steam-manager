@@ -60,3 +60,42 @@ def test_scb_dir_env_override(monkeypatch, tmp_path):
     from steam_manager.cli import _common
     monkeypatch.setenv("STEAM_MANAGER_SCB_DIR", str(tmp_path))
     assert _common.scb_dir() == tmp_path
+
+
+def test_observe_local_conf_shadowed_by_its_base(tmp_path):
+    """<appid>.local.conf is an override of <appid>.conf: when the base file
+    exists the local one is invisible — never an orphan, never a separate
+    entry (regression: it used to show as orphan '<appid>.local')."""
+    scb_dir = tmp_path / "scb"
+    scb_dir.mkdir()
+    (scb_dir / "111.conf").write_text("# base\n")
+    (scb_dir / "111.local.conf").write_text("# local override\n")
+
+    obs = scopebuddy.observe(scb_dir, ["111"], {"111": "scopebuddy -- %command%"})
+    assert obs.missing_configs == []
+    assert obs.orphan_configs == []
+
+
+def test_observe_local_conf_without_base_surfaces(tmp_path):
+    """A dangling local override (no base config) stays visible: the game's
+    base config still counts as missing and the '<appid>.local' entry shows
+    so the anomaly is actionable."""
+    scb_dir = tmp_path / "scb"
+    scb_dir.mkdir()
+    (scb_dir / "111.local.conf").write_text("# local without base\n")
+
+    obs = scopebuddy.observe(scb_dir, ["111"], {"111": "scopebuddy -- %command%"})
+    assert obs.missing_configs == ["111"]
+    assert obs.orphan_configs == ["111.local"]
+
+
+def test_observe_local_conf_of_uninstalled_game(tmp_path):
+    """Base + local of an uninstalled game: only the base is the orphan; the
+    shadowed local never doubles the row."""
+    scb_dir = tmp_path / "scb"
+    scb_dir.mkdir()
+    (scb_dir / "999.conf").write_text("# base\n")
+    (scb_dir / "999.local.conf").write_text("# local\n")
+
+    obs = scopebuddy.observe(scb_dir, ["111"], {"111": None})
+    assert obs.orphan_configs == ["999"]

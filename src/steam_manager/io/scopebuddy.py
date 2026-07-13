@@ -22,12 +22,20 @@ def observe(
     - games_with_scb_launch: appids whose launch options contain 'scopebuddy'
     - missing_configs: appid uses scopebuddy but <appid>.conf is missing
     - orphan_configs: <appid>.conf exists but appid is not installed
+
+    `<name>.local.conf` is ScopeBuddy's local override of `<name>.conf`: while
+    the base file exists the local one is shadowed (no entry of its own); a
+    dangling local override — base file absent — stays visible.
     """
     installed = set(installed_appids)
     existing = set()
     if configs_dir.is_dir():
-        for p in configs_dir.glob("*.conf"):
-            existing.add(p.stem)
+        stems = {p.stem for p in configs_dir.glob("*.conf")}
+        for stem in stems:
+            base, dot, suffix = stem.rpartition(".")
+            if dot and suffix == "local" and base in stems:
+                continue
+            existing.add(stem)
 
     with_scb = {
         appid for appid, opts in launch_options.items()
