@@ -53,7 +53,9 @@ class _PickOneModal(ModalScreen):
             yield Static("Enter to choose · Esc to cancel", classes="modal-hint")
 
     def on_mount(self) -> None:
-        self.query_one(OptionList).focus()
+        ol = self.query_one(OptionList)
+        _highlight_first_enabled(ol)
+        ol.focus()
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         self.dismiss(event.option.id)
@@ -87,6 +89,21 @@ class SettingsScreen(_PickOneModal):
             Option(Content(f"{label:<28} {value}"), id=key)
             for key, label, value in rows
         ], list_id="settings-options")
+
+
+class ScbRowScreen(_PickOneModal):
+    """Per-row actions for the scopebuddy dashboard. Dismisses with 'init',
+    'editor', or 'delete' (the App executes), or None on cancel (Esc)."""
+
+    def __init__(self, name: str, status: str, conf_present: bool,
+                 is_orphan: bool) -> None:
+        super().__init__(f"{name} — {status}", [
+            Option("Create L1 stub", id="init",
+                   disabled=conf_present or is_orphan),
+            Option("Open .conf in $EDITOR", id="editor", disabled=not conf_present),
+            Option("Delete .conf (checkpointed)", id="delete",
+                   disabled=not is_orphan),
+        ], list_id="scb-actions")
 
 
 class CompatPickerScreen(ModalScreen):

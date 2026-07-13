@@ -61,6 +61,23 @@ Screen {
     height: 8;
 }
 
+/* ScopeBuddy dashboard (scb_app.py) — scoped so ConfigApp is untouched. */
+ScbApp #summary {
+    height: 1;
+    padding: 0 1;
+    text-style: bold;
+}
+
+ScbApp #games {
+    height: 1fr;
+}
+
+ScbApp #orphans {
+    height: auto;
+    max-height: 40%;
+    border-top: solid $panel;
+}
+
 ModalScreen {
     align: center middle;
 }

@@ -385,6 +385,29 @@ def test_scb_observe_reports_orphan(fake_steam, tmp_path, monkeypatch):
     assert result.exit_code == 1   # issue rilevato
 
 
+def test_scb_bare_stays_observe_over_pipe(fake_steam, monkeypatch):
+    """CliRunner is non-TTY: bare `scopebuddy` runs observe (report + exit code),
+    never the TUI."""
+    monkeypatch.setenv("STEAM_MANAGER_STEAM_ROOT", str(fake_steam))
+    monkeypatch.setenv("STEAM_MANAGER_POLICY_PATHS",
+                       str(Path(__file__).parent / "fixtures" / "policies_minimal.toml"))
+    result = runner.invoke(cli.app, ["scopebuddy"])
+    assert result.exit_code in (0, 1)
+    assert "Target users" in result.stdout      # observe's banner
+
+
+def test_scb_ui_env_forces_observe_on_tty(fake_steam, monkeypatch):
+    """STEAM_MANAGER_SCB_UI=observe keeps observe even when isatty() lies true."""
+    monkeypatch.setenv("STEAM_MANAGER_STEAM_ROOT", str(fake_steam))
+    monkeypatch.setenv("STEAM_MANAGER_POLICY_PATHS",
+                       str(Path(__file__).parent / "fixtures" / "policies_minimal.toml"))
+    monkeypatch.setenv("STEAM_MANAGER_SCB_UI", "observe")
+    from steam_manager.cli import scopebuddy_cmd
+    monkeypatch.setattr(scopebuddy_cmd, "_ui_is_interactive", lambda: True)
+    result = runner.invoke(cli.app, ["scopebuddy"])
+    assert "Target users" in result.stdout
+
+
 def test_diff_skips_non_game_tools(fake_steam, tmp_path, monkeypatch):
     # Aggiungi un fake manifest per "Proton Experimental" alla library principale
     proton_manifest = '''

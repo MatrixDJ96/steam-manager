@@ -14,3 +14,11 @@ def run(ctx=None) -> int:
 
     ConfigApp(ctx=ctx).run()
     return 0
+
+
+def run_scb(scb_dir, games, launch_options) -> None:
+    """Launch the ScopeBuddy dashboard. The App is imported lazily so merely
+    importing this package never constructs Textual."""
+    from steam_manager.cli.tui.scb_app import ScbApp
+
+    ScbApp(scb_dir, games, launch_options).run()

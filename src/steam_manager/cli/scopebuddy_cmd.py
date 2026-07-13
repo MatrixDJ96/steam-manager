@@ -13,7 +13,14 @@ import typer
 from steam_manager import policy, render
 from steam_manager.cli import _appinfo
 from steam_manager.cli._appinfo import is_listable
-from steam_manager.cli._common import ExitCode, policy_paths, scb_dir, steam_root
+from steam_manager.cli._common import (
+    ExitCode,
+    policy_paths,
+    scb_dir,
+    scb_ui_mode,
+    steam_root,
+)
+from steam_manager.cli._config_entry import _ui_is_interactive
 from steam_manager.cli._targets import (
     effective_target_spec,
     resolve_target_users,
@@ -38,8 +45,47 @@ def scb_default(
         help="Target all local accounts",
     ),
 ):
-    if ctx.invoked_subcommand is None:
-        _scb_observe(user=user, all_users=all_users)
+    if ctx.invoked_subcommand is not None:
+        return
+    # Default action: the dashboard TUI on an interactive terminal, the plain
+    # observe report otherwise. STEAM_MANAGER_SCB_UI (tui|observe) overrides.
+    # Explicit `scopebuddy observe`/`init` never reach this callback.
+    mode = scb_ui_mode() or ("tui" if _ui_is_interactive() else "observe")
+    if mode == "tui":
+        try:
+            games, launch = _resolve_scb_games(user=user, all_users=all_users)
+            from steam_manager.cli import tui as _tui
+            _tui.run_scb(scb_dir(), games, launch)
+            raise typer.Exit(ExitCode.OK)
+        except typer.Exit:
+            raise
+        except Exception:  # noqa: BLE001 — never wedge the terminal on a TUI failure
+            render.warning("TUI unavailable, falling back to observe.")
+    _scb_observe(user=user, all_users=all_users)
+
+
+def _resolve_scb_games(
+    user: str | None = None, all_users: bool = False
+) -> tuple[list, dict[str, str | None]]:
+    """Resolve the target user's installed games and their launch options for
+    the dashboard, using the same discovery/policy/target code as observe.
+    Raises typer.Exit(PARSE_ERROR) when no account matches the target spec."""
+    ctx = discovery.discover(steam_root=steam_root())
+    apps = discovery.list_apps(ctx)
+    users = discovery.list_users(ctx)
+    engine = policy.load(policy_paths())
+
+    target_spec = effective_target_spec(engine.target_users, user, all_users)
+    targets = resolve_target_users(users, target_spec)
+    if not targets:
+        render.error(f"No user matches {target_spec!r}.")
+        raise typer.Exit(ExitCode.PARSE_ERROR)
+
+    primary = targets[0]
+    types = _appinfo.appinfo_types()
+    games = [a for a in apps if a.installed and is_listable(a, types)]
+    launch = {a.appid: localconfig_vdf.get_launch_options(primary, a.appid) for a in games}
+    return games, launch
 
 
 @scopebuddy_app.command("observe")

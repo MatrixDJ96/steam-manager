@@ -46,6 +46,16 @@ def config_ui_mode() -> str | None:
     return val if val in ("tui", "classic") else None
 
 
+def scb_ui_mode() -> str | None:
+    """Honor STEAM_MANAGER_SCB_UI = tui|observe (used by tests + users).
+
+    An unrecognized value returns None so the built-in default still applies —
+    an env typo never silently picks a UI.
+    """
+    val = (os.environ.get("STEAM_MANAGER_SCB_UI") or "").strip().lower()
+    return val if val in ("tui", "observe") else None
+
+
 def policy_paths() -> list[Path]:
     """Resolve the layered policy paths: factory + user override.
 
