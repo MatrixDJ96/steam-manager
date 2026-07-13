@@ -23,6 +23,9 @@ def steam_running() -> int | None:
         return None
     try:
         os.kill(pid, 0)
-    except (ProcessLookupError, PermissionError, OSError):
+    except PermissionError:
+        # The process exists but belongs to another user — still running.
+        return pid
+    except (ProcessLookupError, OSError):
         return None
     return pid
