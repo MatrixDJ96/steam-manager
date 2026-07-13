@@ -40,8 +40,9 @@ Steam's servers, never launches games, and never modifies game files or
   talk to Steam's web services.
 - Not a Pyroveil manager. Per-game shader/runtime hacks live in
   `~/.pyroveil/` and stay out of scope.
-- Does not resolve abstract Proton names. A value like
-  `"Proton-CachyOS Latest"` is written to Steam verbatim; Steam resolves it.
+- Does not resolve or validate Proton names. The `compat_tool` value is
+  written to Steam verbatim; Steam silently ignores an unrecognized name, so
+  policies carry the *tech name* (e.g. `proton-cachyos-slr`).
 - Does not write `appmanifest_*.acf`. Those files are parsed only to
   enumerate installed apps.
 
@@ -67,9 +68,8 @@ this with AST inspection.
 │   ├── __main__.py                  # python -m steam_manager → cli.main()
 │   ├── models.py                    # SteamUser, SteamApp, SteamContext, ShortcutsFile
 │   ├── policy.py                    # policies.toml merge engine + per-AppID resolve
-│   ├── safety.py                    # steam_running() pid-file probe (+ io.backups shim)
+│   ├── safety.py                    # steam_running() pid-file probe
 │   ├── render.py                    # Rich tables, panels, prompts, OSC 8 link helper
-│   ├── steam.py                     # backward-compat shim → io/{discovery,config_vdf,...}
 │   ├── policies.toml                # factory policy (bundled with package)
 │   ├── io/                          # filesystem I/O — no Typer, no Rich
 │   │   ├── __init__.py
@@ -82,6 +82,7 @@ this with AST inspection.
 │   │   ├── appinfo.py               # binary appinfo.vdf parser
 │   │   ├── scopebuddy.py            # ScopeBuddy observe + stub init
 │   │   ├── compat_tools.py          # discovery of installed compat tools (Proton custom + official)
+│   │   ├── github_releases.py       # GitHub Releases API discovery (self-update)
 │   │   └── backups.py               # atomic .tar.gz checkpoints
 │   └── cli/                         # Typer entry + each command in its own file
 │       ├── __init__.py              # wires side-effect imports + main()
@@ -92,15 +93,18 @@ this with AST inspection.
 │       ├── _checkpoint.py           # make_checkpoint() — single manifest schema
 │       ├── _steam_guard.py          # check_steam_closed() refuses writes while alive
 │       ├── _appinfo.py              # appinfo_types @lru_cache + is_listable filter
+│       ├── _update_check.py         # passive newer-release notifier (24h cache, stderr)
 │       ├── _drift.py                # compute_drift() used by list/diff/apply
+│       ├── _restore_diff.py         # compute_restore_diff() — archive-vs-live preview
 │       ├── _targets.py              # --user/--all-users resolution + banner
 │       ├── _wizard_core.py          # pure, render-free config core (Change model, load_state, reducers, apply)
 │       ├── _wizard.py               # classic questionary `config --classic` flow (drives _wizard_core)
 │       ├── _config_entry.py         # config dispatch: TUI vs classic vs scriptable + non-TTY guard
 │       ├── tui/                      # Textual TUI (the only package importing textual)
 │       │   ├── app.py               #   ConfigApp on _wizard_core: one-screen editor + async drift
-│       │   ├── widgets.py           #   modal pickers (compat/launch/targets/backups/confirm)
+│       │   ├── widgets.py           #   modal screens (game editor, settings hub, pickers, confirm)
 │       │   └── app.tcss             #   stylesheet (package data)
+│       ├── _list_render.py          # render_app_groups() — list's Games/Applications panels
 │       ├── list_cmd.py              # `list` — game inventory with compat tool + per-user launch options
 │       ├── diff_cmd.py              # `diff` — preview policy drift (read-only; exit 1 if drift)
 │       ├── apply_cmd.py             # `apply` — write policy drift to disk (auto-backup, no dry-run)
@@ -116,7 +120,7 @@ this with AST inspection.
 │   ├── fixtures/                    # synthetic VDF + TOML fixtures
 │   ├── conftest.py                  # fake_steam fixture
 │   ├── test_architecture.py         # AST-based layering invariants
-│   └── test_*.py                    # 301 tests (Textual Pilot tests marked `tui`)
+│   └── test_*.py                    # 316 tests (Textual Pilot tests marked `tui`)
 └── docs/
     ├── HOWTO.md                     # cookbook for common scenarios
     ├── REFERENCE.md                 # operator reference (schema, exit codes, env vars)
@@ -140,8 +144,7 @@ External paths used at runtime:
   `section_for_type(app_type)`, `resolve(engine, appid, app_type)`. The
   deep-merge engine; pure logic over `models`, no file I/O.
 - **`safety.py`** — `steam_running() -> int | None`. Probes
-  `~/.steam/steam.pid`. Also re-exports `io.backups.{create,list,extract,
-  prune}_checkpoint` so legacy callers see the old API surface.
+  `~/.steam/steam.pid`.
 - **`render.py`** — Rich-based: `_make_inner_table`, `_panel`,
   `simple_table_str`, `diff_table_str`, `link_cell` (OSC 8), `success`/
   `warning`/`error`/`info`, `menu` / `multiselect` (+ the `BACK` sentinel —
@@ -150,15 +153,12 @@ External paths used at runtime:
   secondary-text fragment, e.g. a dimmed AppID), `select_one_interactive`,
   `select_apps_interactive`, `effective_max_width`. Uses ANSI named colors
   only, so the terminal theme controls the actual rendering.
-- **`steam.py`** — backward-compat shim re-exporting the io/ surface
-  (`from steam_manager import steam; steam.discover(); steam.get_compat_tool()`
-  still work). Deprecated; new code should import from `io/` directly.
-
 ### `io/` — filesystem reads/writes
 
 All modules use PyPI `vdf >= 3.4` for text VDF (`io/{discovery,config_vdf,
 localconfig_vdf}.py`) and `vdf.binary_load`/`vdf.binary_dump` for binary VDF
-(`io/{shortcuts_vdf,appinfo}.py`). Case-insensitive section lookups go
+(`io/shortcuts_vdf.py`); `io/appinfo.py` parses Steam's `appinfo.vdf` cache
+with its own custom binary parser. Case-insensitive section lookups go
 through `io/_vdf_util.ci_get()`.
 
 - **`discovery.py`** — `discover(steam_root)`, `list_users(ctx)`,
@@ -190,6 +190,9 @@ through `io/_vdf_util.ci_get()`.
   by `name.startswith("Proton")` (official Proton builds Steam installs as
   apps). The system dirs are overridable via `STEAM_MANAGER_COMPAT_DIRS`. Used
   by the `config wizard` picker so the user never types a tech_name by hand.
+- **`github_releases.py`** — GitHub Releases API discovery for self-update:
+  stdlib `urllib.request` + `json` only, returns plain dataclasses for the
+  CLI layer to render. Used by `update` and the passive update notifier.
 - **`backups.py`** — `create_checkpoint(root, ts, files, manifest)`,
   `list_checkpoints(root)`, `extract_checkpoint(archive, targets)`,
   `prune_checkpoints(root, limit)`. Atomic via temp file + rename.
@@ -221,6 +224,10 @@ Shared CLI helpers (private to the cli/ layer):
   to show a preview before extracting.
 - **`_steam_guard.py`** — `check_steam_closed(force)`: exits with
   `STEAM_RUNNING` when Steam is alive and `--force` isn't set.
+- **`_update_check.py`** — the passive newer-release notifier: fired from the
+  Click result callback, 24h JSON cache, single 2s-timeout GitHub call,
+  stderr-only banner; active only in the frozen binary and disabled by
+  `STEAM_MANAGER_NO_UPDATE_NOTIFIER`.
 - **`_appinfo.py`** — `appinfo_types()` with `@lru_cache`, `is_listable`,
   `NON_GAME_NAME_PREFIXES`. The "what counts as a game" filter shared by
   list/diff/apply/scopebuddy.
@@ -231,6 +238,10 @@ Shared CLI helpers (private to the cli/ layer):
 - **`_targets.py`** — `effective_target_spec`, `resolve_target_users`,
   `target_users_banner`: turn `--user`/`--all-users` flags into a concrete
   user list and a Rich-markup banner.
+- **`_list_render.py`** — `render_app_groups(console, ctx, listable, types,
+  target_users, drift_appids)`: the Games/Applications panels `list` prints.
+  Keeps `list_cmd` a thin orchestrator; grouping mirrors
+  `policy.section_for_type`.
 
 The `config` editor is a **shared pure core with two front-ends**:
 
@@ -268,7 +279,7 @@ users/<account>/localconfig.vdf       # one per affected user
 
 `manifest.json` records:
 
-- `created_at` — ISO-8601 with timezone.
+- `created_at` — ISO-8601 local timestamp (naive, no timezone offset).
 - `trigger` — `manual`, `apply`, `clear`, or `shortcuts-edit`.
 - `system` — bool, whether `config.vdf` is in the archive.
 - `users` — list of account names with `localconfig.vdf` in the archive.
@@ -331,7 +342,7 @@ that section.
 
 ## 7. Testing
 
-301 tests under `tests/`, driven by `pytest` with synthetic VDF and TOML
+316 tests under `tests/`, driven by `pytest` with synthetic VDF and TOML
 fixtures. The `fake_steam` fixture in `conftest.py` builds a self-contained
 Steam tree in `tmp_path` so tests never touch the real Steam install.
 
@@ -350,8 +361,12 @@ Tests that need to bypass production paths set env vars honored by
 - `STEAM_MANAGER_BACKUP_ROOT` — overrides the backup directory.
 - `STEAM_MANAGER_USER_POLICY` — overrides the user policy file path.
 - `STEAM_MANAGER_SCB_DIR` — overrides the ScopeBuddy configs dir.
+- `STEAM_MANAGER_COMPAT_DIRS` — colon-separated system-wide
+  `compatibilitytools.d/` dirs (an autouse fixture sets it empty so real
+  system Proton builds never leak into tests).
 - `STEAM_MANAGER_FORCE=1` — equivalent to passing `--force`.
 - `STEAM_MANAGER_CONFIG_UI` — picks the `config` editor front-end (`tui`/`classic`).
+- `STEAM_MANAGER_UPDATE_STATE` — overrides the update notifier's cache file path.
 
 Commands are exercised through `typer.testing.CliRunner` against `cli.app`.
 Rich output goes to a `StringIO` in tests, which strips ANSI; substring
@@ -368,6 +383,8 @@ rules listed in section 3. The rules tested:
 - `safety.py` may not import from `cli/`, `render`, `policy`
 - `models.py` must not import any project module
 - `cli/` must consume `io/` only through its public (non-`_`) API
+- `cli/_wizard_core.py` stays render-free: none of `_drift`/`_targets`/
+  `render`/questionary/textual (the shared edit core works without a terminal)
 - `textual` may be imported **only** under `cli/tui/`, and nothing outside
   `cli/tui/` may import `cli.tui` at module scope (so non-TUI commands never
   load Textual at startup)

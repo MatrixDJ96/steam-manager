@@ -18,10 +18,10 @@ pip install -e ".[dev]"                     # add [build] for PyInstaller
 ## Common commands
 
 ```bash
-pytest                                      # full suite (301 tests; Textual Pilot tests marked `tui`)
+pytest                                      # full suite (316 tests; Textual Pilot tests marked `tui`)
 pytest -m "not tui"                          # fast lane: skip the Textual Pilot tests (sub-2s)
 pytest tests/test_cli.py -v                 # one file
-pytest tests/test_architecture.py           # layering invariants (8 tests)
+pytest tests/test_architecture.py           # layering invariants (9 tests)
 pytest -k "diff and appid"                  # one test by name pattern
 pytest --cov                                # opt-in coverage (uses pyproject config)
 
@@ -43,9 +43,8 @@ src/steam_manager/
 ├── __init__.py           __version__ (single source of truth, paired with pyproject.toml)
 ├── models.py             SteamUser, SteamApp, SteamContext, ShortcutsFile (shared dataclasses)
 ├── policy.py             policies.toml merge engine + per-AppID resolve
-├── safety.py             steam_running() — pid-file probe + io.backups re-exports
+├── safety.py             steam_running() — pid-file probe
 ├── render.py             Rich tables/panels/prompts, OSC 8 link helper
-├── steam.py              backward-compat shim re-exporting io.{discovery,config_vdf,localconfig_vdf}
 │
 ├── io/                   filesystem I/O — zero Typer, zero Rich
 │   ├── discovery.py      libraryfolders.vdf, loginusers.vdf, appmanifest_*.acf
@@ -57,6 +56,7 @@ src/steam_manager/
 │   ├── appinfo.py        parser for Steam's binary appinfo.vdf cache
 │   ├── scopebuddy.py     observe missing/orphan configs, init L1 stub
 │   ├── compat_tools.py   discovery of installed compat tools (Proton custom + official)
+│   ├── github_releases.py GitHub Releases API discovery for the self-update flow
 │   └── _vdf_util.py      private: ci_get() for case-insensitive VDF lookups
 │
 └── cli/                  Typer + rich-click layer
@@ -67,7 +67,9 @@ src/steam_manager/
     ├── _checkpoint.py    make_checkpoint() + build_steam_files() — single manifest schema
     ├── _steam_guard.py   check_steam_closed() — refuses writes while Steam is alive
     ├── _appinfo.py       appinfo_types @lru_cache + is_listable() + NON_GAME_NAME_PREFIXES
+    ├── _update_check.py  passive newer-release notifier (24h cache, stderr, frozen binary only)
     ├── _drift.py         compute_drift() — used by list/diff/apply
+    ├── _restore_diff.py  compute_restore_diff() — archive-vs-live preview used by restore
     ├── _targets.py       resolve_target_users/effective_target_spec/target_users_banner
     ├── _wizard_core.py   pure config core — Change, load_state, reducers, apply (no Rich/questionary/Textual)
     ├── _wizard.py        classic `config --classic` questionary flow (drives _wizard_core)
@@ -94,6 +96,7 @@ Layer rules (tested by `tests/test_architecture.py`):
 - `render.py` must not import any project module
 - `safety.py` must not import from `cli/`, `render`, `policy`
 - `models.py` must not import any project module
+- `cli/` consumes `io/` only through its public API (no `_`-prefixed io names; `_vdf_util` is the one documented exception)
 - `textual` may be imported only under `cli/tui/`; nothing outside `cli/tui/` imports `cli.tui` at module scope (so non-TUI commands never load Textual). `cli/_wizard_core.py` must stay render-free — it must NOT import `_drift`/`_targets`/`render`/questionary/Textual (drift is computed in the TUI layer instead).
 
 Sibling helpers in `cli/_*.py` may import each other freely; only the layer boundaries above are enforced.
@@ -124,7 +127,7 @@ The list of "what counts as a game" is decided by parsing Steam's binary `appinf
 
 ### Backups are archives, not directories
 
-Every destructive operation (`apply`, `clear`, `backup`, `shortcuts edit`) calls `cli._checkpoint.make_checkpoint()`, which builds the standardized manifest and delegates to `io.backups.create_checkpoint()`. The result is a single `<timestamp>.tar.gz` in `~/.local/state/steam-manager/backups/` containing `manifest.json` plus the snapshotted files. Atomic via temp file + rename. Adding a new trigger (e.g. for a future `shortcuts restore` command) is a one-line change in `make_checkpoint()` — don't open-code a new manifest pattern.
+Every destructive operation (`apply`, `clear`, `backup`, `shortcuts edit`) calls `cli._checkpoint.make_checkpoint()`, which builds the standardized manifest and delegates to `io.backups.create_checkpoint()`. The result is a single `<timestamp>.tar.gz` in `~/.local/state/steam-manager/backups/` containing `manifest.json` plus the snapshotted files. Atomic via temp file + rename. Adding a new trigger is a one-line change in `make_checkpoint()` — don't open-code a new manifest pattern. `restore` maps every member kind (`config.vdf`, per-user `localconfig.vdf` and `shortcuts.vdf`) back to its live location.
 
 The manifest schema is intentionally minimal: `created_at`, `trigger`, `system` (bool), `users` (list of account names), `files` (archive members). It does NOT store the drift list — `restore` always computes a fresh diff on the fly (`cli/_restore_diff.compute_restore_diff()`) by extracting the archive into a tempdir and comparing it against the live state. The preview is rendered with the same `render.diff_table_str()` that `diff` uses, so the visual is consistent across both commands.
 
@@ -147,6 +150,8 @@ Tests never touch the real Steam install. The `fake_steam` fixture in `tests/con
 - `STEAM_MANAGER_SCB_DIR` — overrides the ScopeBuddy configs dir (`~/.config/scopebuddy/games/steam/`)
 - `STEAM_MANAGER_COMPAT_DIRS` — colon-separated system-wide `compatibilitytools.d/` dirs (replaces the `/usr/share/steam` + `/usr/local/share/steam` defaults); the `_isolate_system_compat_dirs` autouse fixture sets it empty so real system Proton builds never leak into tests
 - `STEAM_MANAGER_FORCE` — when `"1"`, equivalent to passing `--force` (skips Steam-running check)
+- `STEAM_MANAGER_CONFIG_UI` — picks the `config` editor front-end (`tui`/`classic`); flags still win
+- `STEAM_MANAGER_UPDATE_STATE` — overrides the update notifier's 24h cache file path
 
 Commands are exercised through `typer.testing.CliRunner` against `cli.app`. Rich output goes to a `StringIO` in tests, which strips ANSI; substring assertions on table content work, but assertions on colors/styles do not.
 

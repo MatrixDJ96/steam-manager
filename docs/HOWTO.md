@@ -13,7 +13,7 @@ For the full configuration schema and reference tables, see
 ```toml
 # ~/.config/steam-manager/policies.toml
 [games]
-compat_tool    = "Proton-CachyOS Latest"
+compat_tool    = "proton-cachyos-slr"
 launch_options = "scopebuddy -- %command%"
 ```
 
@@ -22,9 +22,10 @@ steam-manager diff     # preview the changes
 steam-manager apply    # commit them (auto-backup first)
 ```
 
-The exact name (`"Proton-CachyOS Latest"`, `"proton_experimental"`, ...) is
-the string Steam expects in `config.vdf`; it is not resolved by
-`steam-manager`. If you don't know the right tech name, use the wizard
+The exact *tech name* (`"proton-cachyos-slr"`, `"proton_experimental"`, ...)
+is the string Steam expects in `config.vdf`; it is not resolved by
+`steam-manager`, and a human-friendly display name ("Proton-CachyOS Latest")
+silently fails. If you don't know the right tech name, use the wizard
 (below) — it lists Proton builds actually installed on your system.
 
 ## Pick a Proton with the interactive editor
@@ -40,13 +41,17 @@ steam-manager config --classic    # the step-by-step prompt wizard
 The **TUI** shows the whole policy on one screen: a defaults bar, a
 type-to-filter table of installed games (each with its policy compat tool
 and launch options), a targets/backups pane, and a live **Pending** pane.
-Move with `↑`/`↓`, `c` edits the selected game's compat tool, `l` its
-launch options, `g`/`G` the games defaults, `Space` toggles ignore, `/`
-filters; `s` **Saves**. Save writes only `policies.toml` — the footer and
-drift line remind you to run `steam-manager apply` to push it onto Steam.
-The compat picker lists every Proton actually installed (custom builds in
-`compatibilitytools.d/` plus Steam's own official ones) by display name,
-so you never type a tech name.
+Move with `↑`/`↓`; `Enter` (or a click) opens the selected game's editor —
+compat tool, launch options, ignore — and `e` opens the **Settings** hub
+with every global default (games/apps compat and launch, target accounts,
+max backups); the defaults cards are clickable too. `Space` toggles
+ignore, `/` filters; `s` **Saves**. Quick keys edit without the menus:
+`c`/`l` the selected game's compat/launch, `g`/`G` and `p`/`P` the
+games/apps defaults, `u` targets, `b` backups. Save writes only
+`policies.toml` — the footer and drift line remind you to run
+`steam-manager apply` to push it onto Steam. The compat picker lists every
+Proton actually installed (custom builds in `compatibilitytools.d/` plus
+Steam's own official ones) by display name, so you never type a tech name.
 
 Prefer `--classic` on an exotic terminal, or over SSH where the full TUI
 misbehaves. Over a pipe / non-interactive stream, `config` prints the
@@ -106,7 +111,7 @@ User comments in the TOML file are preserved.
 
 ```toml
 [games]
-compat_tool = "Proton-CachyOS Latest"
+compat_tool = "proton-cachyos-slr"
 
 [overrides.1495710]
 ignore = true                  # do not touch HELLDIVERS 2 at all
@@ -162,7 +167,7 @@ never diverged), `restore` skips the extraction entirely and prints
 
 Each `apply`/`clear` creates a `.tar.gz` checkpoint at
 `~/.local/state/steam-manager/backups/` before writing. Retention defaults to
-the last 20 archives (override via `[general] max_backups`).
+the last 10 archives (override via `[general] max_backups`).
 
 ## Reset one specific AppID to Steam defaults
 
@@ -313,7 +318,7 @@ python3 -m venv ~/.venvs/steam-manager   # keep site-packages off NTFS
 ln -sf ~/.venvs/steam-manager .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                   # 223 hermetic tests, &lt;2s
+pytest                                   # 316 hermetic tests (-m "not tui": &lt;2s)
 ```
 
 The repository's `AGENTS.md` documents project-specific quirks (NTFS+btrfs

@@ -20,7 +20,7 @@ $ steam-manager diff
 ⓘ Target users: user:matrixdj96 (active)
 ╭─ Compat tool ────────────────────────────────────────────────────────────────╮
 │      AppID    Name            From         To                                │
-│        222    Game Two        <none>       Proton-CachyOS Latest             │
+│        222    Game Two        <none>       proton-cachyos-slr                │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Launch options ─────────────────────────────────────────────────────────────╮
 │      AppID    Name            From         To                                │
@@ -50,7 +50,7 @@ Re-running the command at any time replaces the binary with the latest
 release. To uninstall: `rm ~/.local/bin/steam-manager`.
 
 **Requirements**: Linux x86_64, `curl` or `wget`. No Python or `pip` needed —
-the binary is fully self-contained (~16 MB).
+the binary is fully self-contained (~20 MB).
 
 The installer downloads the binary into `~/.local/bin/` and verifies it
 against the published `.sha256`. If the directory is not on your `PATH`, the
@@ -89,7 +89,7 @@ steam-manager apply            # apply the policy
 ```bash
 steam-manager config                                   # full-screen TUI (default; --classic for prompts)
 steam-manager config get games.compat_tool             # read a value (scriptable)
-steam-manager config set games.compat_tool "Proton-X"  # set a value  (scriptable)
+steam-manager config set games.compat_tool "proton_experimental"  # set a value (scriptable)
 steam-manager config unset overrides.1495710.ignore    # remove a key (scriptable)
 ```
 
@@ -138,8 +138,10 @@ flags, and exit codes see [`docs/REFERENCE.md`](docs/REFERENCE.md).
 
 - It is **not** a Steam client. It does not launch games, does not
   authenticate, does not talk to Steam's web services.
-- It does **not** resolve abstract Proton names — a value like
-  `"Proton-CachyOS Latest"` is written to Steam verbatim; Steam resolves it.
+- It does **not** resolve or validate Proton names — the `compat_tool` value
+  is written to Steam verbatim, and Steam silently ignores a name it doesn't
+  recognize. Use the *tech name* (e.g. `proton-cachyos-slr`), not the display
+  name; the `config` editor picks the right one for you.
 - It does **not** modify game files, save data, or `appmanifest_*.acf`.
   Manifests are parsed read-only.
 - It is **not** a Pyroveil manager. Per-game shader/runtime hacks in
@@ -159,7 +161,7 @@ Three ways to edit them:
   `steam-manager apply` to push it onto Steam. Prefer step-by-step prompts?
   `steam-manager config --classic`. (Over a pipe / non-interactive it prints
   the scriptable hint instead of opening a UI.)
-- `steam-manager config set games.compat_tool "Proton-Experimental"` —
+- `steam-manager config set games.compat_tool "proton_experimental"` —
   script-friendly primitives (`get` / `set` / `unset` over dotted keys).
 - `$EDITOR $(steam-manager config path)` — edit the raw TOML by hand.
 
@@ -167,7 +169,7 @@ Minimal example:
 
 ```toml
 [games]
-compat_tool    = "Proton-CachyOS Latest"
+compat_tool    = "proton-cachyos-slr"
 launch_options = "scopebuddy -- %command%"
 
 [overrides.1495710]
@@ -194,7 +196,7 @@ documented in [`docs/REFERENCE.md`](docs/REFERENCE.md).
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                         # 223 tests, all hermetic, < 2 seconds
+pytest                         # 316 tests, all hermetic (-m "not tui" for the sub-2s lane)
 ```
 
 Architecture, module APIs, and the build pipeline are documented in

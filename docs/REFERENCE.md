@@ -27,8 +27,10 @@ max_backups  = 10
 target_users = ["active"]
 
 [games]
-# Applied to every app of type "game" or "beta".
-compat_tool    = "Proton-CachyOS Latest"
+# Applied to every app of type "game" or "beta". compat_tool is the tech
+# name Steam expects (a display name like "Proton-CachyOS Latest" is
+# silently ignored by Steam) — the `config` editor picks the right one.
+compat_tool    = "proton-cachyos-slr"
 launch_options = "scopebuddy -- %command%"
 
 [applications]
@@ -83,7 +85,7 @@ Same five panels as `steam-manager --help`.
 | Command   | Description |
 |-----------|-------------|
 | `backup`  | Manually create a full checkpoint archive. |
-| `restore` | Restore from a previous checkpoint. Interactive single-select or `--last`. Aborts if Steam is running. |
+| `restore` | Restore from a previous checkpoint. Interactive single-select or `--last`; `--yes` skips the confirmation. Aborts if Steam is running. |
 
 ### Steam tools
 
@@ -159,13 +161,11 @@ Queued edits are written in one batch only when you choose **Apply pending chang
 | Set target users                          | Pick one mode — `active` (logged-in), `*` (all accounts), or "Specific accounts…"; the last opens a multi-select over the `loginusers.vdf` accounts. The modes are mutually exclusive. Writes `general.target_users`. |
 | Set max backups                           | Integer prompt (≥ 1). Writes `general.max_backups`.                                                                           |
 | Show current configuration                | Renders the full effective config as a sectioned table. No write.                                                             |
-| Reset to defaults                         | Deletes `~/.config/steam-manager/policies.toml` after explicit confirmation. Same as `config reset --yes`.                    |
+| Reset to defaults                         | Deletes `~/.config/steam-manager/policies.toml` after explicit confirmation. Same outcome as `rm $(steam-manager config path)`. |
 
 Non-runnable compat tools — Steam Linux Runtime layers (`scout_ldlp` / "Legacy runtime") and Proton sub-runtimes invoked internally for anti-cheat ("Proton EasyAntiCheat Runtime", "Proton BattlEye Runtime") — are filtered out of the picker. They're installed on disk but selecting them as a game's compat_tool is never what you want.
 
 Dotted keys: `games.compat_tool`, `general.max_backups`, `overrides.1495710.ignore`. Keys containing literal `.` are not supported.
-
-Editor selection: `$EDITOR` if set, else `vi`/`nano`/`nvim` (in order) if on PATH. Sets exit 3 with a clear message if none is found.
 
 ### Shared user filters
 
@@ -179,9 +179,11 @@ Editor selection: `$EDITOR` if set, else `vi`/`nano`/`nvim` (in order) if on PAT
 | `--force`            | Bypass the Steam-running check on writing commands.         |
 
 `shortcuts edit` accepts `--user` and `--force` only (no `--all-users`,
-no `--appid` — the shortcuts file is inherently per-account). `scopebuddy
-init` accepts `--missing` (init every game lacking a stub) and `--force`
-(overwrite existing stubs).
+no `--appid` — the shortcuts file is inherently per-account). Its editor is
+`$EDITOR` if set, else `vi`/`nano`/`nvim` (in order) if on PATH; when none
+is found it exits 2 with a clear message. `scopebuddy init` accepts
+`--missing` (init every game lacking a stub) and `--force` (overwrite
+existing stubs).
 
 CLI flags override `[general] target_users` from `policies.toml`. `--user`
 and `--all-users` are mutually exclusive.
@@ -193,8 +195,8 @@ and `--all-users` are mutually exclusive.
 | 0    | OK / no drift                                        |
 | 1    | Drift detected or ScopeBuddy issues                  |
 | 2    | Steam is running (write commands), or `config` on a non-interactive stream / conflicting `--tui` `--classic` |
-| 3    | Config parse error or mutually-exclusive flags       |
-| 4    | Write error (reserved for rollback path)             |
+| 3    | Invalid input / failed precondition: policy parse error, `--user` + `--all-users` together, missing `config get` key, unknown AppID or missing path (`open`), no matching account, `update` on a non-frozen install, aborted `shortcuts edit` |
+| 4    | Write error: `apply` failed mid-write (the pre-apply checkpoint is kept — `restore --last` rolls back), or an `update` download/install failure |
 
 Useful for scripting: `steam-manager diff && echo "clean" || echo "drift"`.
 
@@ -210,6 +212,9 @@ users/&lt;account&gt;/localconfig.vdf
 users/&lt;other-account&gt;/localconfig.vdf
 ```
 
+`shortcuts edit` checkpoints hold `users/&lt;account&gt;/shortcuts.vdf` instead;
+`restore` maps every member kind back to its live location.
+
 Archives are written to a `.tmp` file first, then `rename(2)` into place —
 no partial-checkpoint states are possible. Auto-pruned to the most recent
 `[general] max_backups` archives.
@@ -222,9 +227,9 @@ For the `manifest.json` field-by-field schema and atomicity details, see
 
 ## Safety rails
 
-- `apply`, `restore`, and `clear` refuse to run when Steam is running
-  (detected via `~/.steam/steam.pid`). Use `--force` (or the env var
-  `STEAM_MANAGER_FORCE=1`) to override.
+- `apply`, `restore`, `clear`, and `shortcuts edit` refuse to run when Steam
+  is running (detected via `~/.steam/steam.pid`). Use `--force` (or the env
+  var `STEAM_MANAGER_FORCE=1`) to override.
 - `apply` and `clear` always create a checkpoint before writing — no opt-out.
 
 ## Terminal compatibility
