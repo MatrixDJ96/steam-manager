@@ -7,42 +7,18 @@ sub-2s and Textual-free. These drive the real App via `app.run_test()` on the
 from __future__ import annotations
 
 import dataclasses
-from pathlib import Path
 
 import pytest
 
 from steam_manager.cli import _wizard_core as core
+from tests.tui_helpers import make_app, wait_for_screen
 
 pytestmark = pytest.mark.tui
 
 
-@pytest.fixture
-def env(fake_steam: Path, tmp_path: Path, monkeypatch) -> Path:
-    monkeypatch.setenv("STEAM_MANAGER_STEAM_ROOT", str(fake_steam))
-    user = tmp_path / "user.toml"
-    monkeypatch.setenv("STEAM_MANAGER_USER_POLICY", str(user))
-    monkeypatch.delenv("STEAM_MANAGER_POLICY_PATHS", raising=False)
-    return user
-
-
-def _app(state=None):
-    from steam_manager.cli.tui.app import ConfigApp
-    return ConfigApp(state=state)
-
-
-async def _wait_for_screen(pilot, app, screen_type, tries: int = 30):
-    """Pump the event loop until a modal of `screen_type` is on top (the @work
-    action that pushes it runs in a worker, so it isn't synchronous)."""
-    for _ in range(tries):
-        await pilot.pause()
-        if isinstance(app.screen, screen_type):
-            return
-    raise AssertionError(f"{screen_type.__name__} never appeared")
-
-
 async def test_app_lists_games(env):
     from textual.widgets import DataTable
-    app = _app()
+    app = make_app()
     async with app.run_test() as pilot:
         await pilot.pause()
         table = app.query_one("#games", DataTable)
@@ -52,7 +28,7 @@ async def test_app_lists_games(env):
 
 async def test_filter_by_appid_narrows_to_one(env):
     from textual.widgets import DataTable, Input
-    app = _app()
+    app = make_app()
     async with app.run_test() as pilot:
         await pilot.pause()
         appid = app.state.data.games[0].appid
@@ -63,7 +39,7 @@ async def test_filter_by_appid_narrows_to_one(env):
 
 async def test_toggle_ignore_stages_pending(env):
     from textual.widgets import DataTable
-    app = _app()
+    app = make_app()
     async with app.run_test() as pilot:
         await pilot.pause()
         app.query_one("#games", DataTable).focus()
@@ -74,7 +50,7 @@ async def test_toggle_ignore_stages_pending(env):
 
 
 async def test_save_writes_user_policy_and_clears(env):
-    app = _app()
+    app = make_app()
     async with app.run_test() as pilot:
         await pilot.pause()
         await pilot.press("space")          # ignore the first game
@@ -89,11 +65,11 @@ async def test_save_writes_user_policy_and_clears(env):
 async def test_max_backups_modal_edits_value(env):
     from textual.widgets import Input
     from steam_manager.cli.tui.widgets import MaxBackupsScreen
-    app = _app()
+    app = make_app()
     async with app.run_test() as pilot:
         await pilot.pause()
         await pilot.press("b")              # open MaxBackupsScreen
-        await _wait_for_screen(pilot, app, MaxBackupsScreen)
+        await wait_for_screen(pilot, app, MaxBackupsScreen)
         app.screen.query_one("#backups-input", Input).value = "7"
         await pilot.press("enter")
         await pilot.pause()
@@ -104,7 +80,7 @@ async def test_compat_picker_clears_to_none(env):
     # Pick "None (Steam default)" for the games default -> queues an unset only
     # if a value existed; factory ships no games.compat_tool, so it is a no-op.
     # Instead set a per-game override then confirm the picker stages a Change.
-    app = _app()
+    app = make_app()
     async with app.run_test() as pilot:
         await pilot.pause()
         # The compat picker on the games default; choose None is a no-op, so
@@ -119,7 +95,7 @@ async def test_compat_picker_clears_to_none(env):
 
 
 async def test_quit_with_pending_confirms_and_discards(env):
-    app = _app()
+    app = make_app()
     async with app.run_test() as pilot:
         await pilot.pause()
         await pilot.press("space")          # stage a change
@@ -133,11 +109,82 @@ async def test_quit_with_pending_confirms_and_discards(env):
     assert not env.exists()
 
 
+async def test_enter_opens_game_editor(env):
+    from steam_manager.cli.tui.widgets import GameEditScreen
+    app = make_app()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("enter")          # games table focused on mount
+        await wait_for_screen(pilot, app, GameEditScreen)
+        await pilot.press("escape")         # cancel stages nothing
+        await pilot.pause()
+        assert app.state.pending_count == 0
+
+
+async def test_game_editor_toggles_ignore(env):
+    from steam_manager.cli.tui.widgets import GameEditScreen
+    app = make_app()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("enter")
+        await wait_for_screen(pilot, app, GameEditScreen)
+        await pilot.press("down", "down", "enter")   # compat, launch, IGNORE
+        await pilot.pause()
+        assert app.state.pending_count == 1
+        first = app.state.data.games[0]
+        assert app.state.pending[0].key == f"overrides.{first.appid}.ignore"
+
+
+async def test_settings_hub_routes_to_max_backups(env):
+    from textual.widgets import Input
+    from steam_manager.cli.tui.widgets import MaxBackupsScreen, SettingsScreen
+    app = make_app()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("e")
+        await wait_for_screen(pilot, app, SettingsScreen)
+        await pilot.press(*(["down"] * 5), "enter")  # last entry: Max backups
+        await wait_for_screen(pilot, app, MaxBackupsScreen)
+        app.screen.query_one("#backups-input", Input).value = "7"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app.state.effective("general.max_backups") == 7
+
+
+async def test_settings_hub_routes_to_games_compat(env):
+    from steam_manager.cli.tui.widgets import CompatPickerScreen, SettingsScreen
+    app = make_app()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("e")
+        await wait_for_screen(pilot, app, SettingsScreen)
+        await pilot.press("enter")                   # first entry: Games · compat tool
+        await wait_for_screen(pilot, app, CompatPickerScreen)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert app.state.pending_count == 0
+
+
+async def test_confirm_buttons_default_to_no(env):
+    from steam_manager.cli.tui.widgets import ConfirmScreen
+    app = make_app()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("space")          # stage a change
+        await pilot.pause()
+        await pilot.press("q")              # quit -> ConfirmScreen
+        await wait_for_screen(pilot, app, ConfirmScreen)
+        await pilot.press("enter")          # activates the pre-focused No button
+        await pilot.pause()
+        assert not app._exit                # still running
+        assert app.state.pending_count == 1
+
+
 async def test_empty_games_shows_message(env):
     from textual.widgets import Static
     base = core.load_state()
     empty = dataclasses.replace(base, data=dataclasses.replace(base.data, games=()))
-    app = _app(state=empty)
+    app = make_app(state=empty)
     async with app.run_test() as pilot:
         await pilot.pause()
         note = app.query_one("#empty-note", Static)

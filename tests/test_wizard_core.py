@@ -7,25 +7,12 @@ fast lane the classic flow's Change tests live in.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from steam_manager.cli import _wizard_core as core
 from steam_manager.cli._common import steam_root
 from steam_manager.cli._wizard_core import _UNSET, Change
 from steam_manager.io import discovery, policies_toml
-
-
-@pytest.fixture
-def env(fake_steam: Path, tmp_path: Path, monkeypatch) -> Path:
-    """Point steam_root at fake_steam and the user policy at a tmp file
-    (factory still merged underneath). Returns the user-policy path."""
-    monkeypatch.setenv("STEAM_MANAGER_STEAM_ROOT", str(fake_steam))
-    user = tmp_path / "user.toml"
-    monkeypatch.setenv("STEAM_MANAGER_USER_POLICY", str(user))
-    monkeypatch.delenv("STEAM_MANAGER_POLICY_PATHS", raising=False)
-    return user
 
 
 @pytest.fixture

@@ -83,3 +83,13 @@ ModalScreen {
     color: $warning;
     padding-top: 1;
 }
+
+.modal-buttons {
+    height: auto;
+    align-horizontal: center;
+    padding-top: 1;
+}
+
+.modal-buttons Button {
+    margin: 0 2;
+}

@@ -179,6 +179,30 @@ def test_textual_confined_to_cli_tui():
     assert not violators, f"textual imported outside cli/tui/: {violators}"
 
 
+def test_wizard_core_stays_render_free():
+    """cli/_wizard_core.py is the pure decision core shared by the classic
+    wizard and the TUI: it imports none of the render-coupled modules
+    (_drift/_targets/render) and no UI toolkit (questionary/textual), so the
+    edit logic stays unit-testable without a terminal."""
+    tree = ast.parse((SRC / "cli" / "_wizard_core.py").read_text())
+    forbidden = {"questionary", "textual"}
+    forbidden_project = {"steam_manager.render", "steam_manager.cli._drift",
+                         "steam_manager.cli._targets"}
+    violations: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            violations += [a.name for a in node.names
+                           if a.name.split(".")[0] in forbidden
+                           or a.name in forbidden_project]
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            if node.module.split(".")[0] in forbidden or node.module in forbidden_project:
+                violations.append(node.module)
+            if node.module in {"steam_manager", "steam_manager.cli"}:
+                violations += [a.name for a in node.names
+                               if a.name in {"render", "_drift", "_targets"}]
+    assert not violations, f"_wizard_core.py imported render-coupled modules: {violations}"
+
+
 def test_cli_tui_not_imported_at_module_scope_elsewhere():
     """Nothing outside cli/tui/ may import cli.tui at MODULE scope — the
     dispatcher imports it lazily inside a function, so non-TUI commands never

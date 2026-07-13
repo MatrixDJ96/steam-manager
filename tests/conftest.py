@@ -141,3 +141,14 @@ def fake_steam(tmp_path: Path) -> Path:
                 root / "userdata" / "72021823" / "config" / "localconfig.vdf")
 
     return root
+
+
+@pytest.fixture
+def env(fake_steam: Path, tmp_path: Path, monkeypatch) -> Path:
+    """Point steam_root at fake_steam and the user policy at a tmp file
+    (factory still merged underneath). Returns the user-policy path."""
+    monkeypatch.setenv("STEAM_MANAGER_STEAM_ROOT", str(fake_steam))
+    user = tmp_path / "user.toml"
+    monkeypatch.setenv("STEAM_MANAGER_USER_POLICY", str(user))
+    monkeypatch.delenv("STEAM_MANAGER_POLICY_PATHS", raising=False)
+    return user
