@@ -70,8 +70,12 @@ def backup_root() -> Path:
 
 
 def iso_timestamp() -> str:
-    """Filesystem-safe ISO-8601 timestamp used in checkpoint archive names."""
-    return _dt.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+    """Filesystem-safe ISO-8601 timestamp used in checkpoint archive names.
+
+    Microsecond resolution: two destructive operations in the same second get
+    distinct archive names. The zero-padded `%f` keeps `list_checkpoints`'s
+    lexicographic order chronological."""
+    return _dt.datetime.now().strftime("%Y-%m-%dT%H-%M-%S-%f")
 
 
 def update_state_path() -> Path:

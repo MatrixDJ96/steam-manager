@@ -85,3 +85,25 @@ def test_prune_checkpoints_below_limit_noop(tmp_path):
     backups.create_checkpoint(root, "ts1", {"config.vdf": src}, {})
     assert backups.prune_checkpoints(root, limit=5) == []
     assert len(list(root.glob("*.tar.gz"))) == 1
+
+
+def test_rapid_checkpoints_never_collide(tmp_path, monkeypatch):
+    """Two destructive operations in the same wall-clock second get distinct
+    archive names (microsecond-resolution timestamps), so the second never
+    overwrites the first's backup."""
+    from steam_manager.cli._checkpoint import make_checkpoint
+
+    monkeypatch.setenv("STEAM_MANAGER_BACKUP_ROOT", str(tmp_path / "bk"))
+    src = tmp_path / "config.vdf"
+    src.write_text("hello")
+    a1 = make_checkpoint(trigger="backup", files={"config.vdf": src})
+    a2 = make_checkpoint(trigger="apply", files={"config.vdf": src})
+    assert a1 != a2
+    assert len(backups.list_checkpoints(tmp_path / "bk")) == 2
+
+
+def test_iso_timestamp_has_subsecond_resolution():
+    import re
+    from steam_manager.cli._common import iso_timestamp
+
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{6}", iso_timestamp())
