@@ -257,9 +257,41 @@ def test_restore_shows_diff_preview(fake_steam, tmp_path, monkeypatch):
     # Restore --last --yes: the diff preview must mention the change.
     result = runner.invoke(cli.app, ["restore", "--last", "--yes"])
     assert result.exit_code == 0
-    assert "would apply" in result.stdout
+    # Normalize whitespace: the phrase may wrap across lines in the 80-col console.
+    assert "would apply" in " ".join(result.stdout.split())
     # Diff renderer prints "Compat tool" panel header when compat changes exist.
     assert "Compat tool" in result.stdout
+
+
+def test_restore_recovers_shortcuts(fake_steam, tmp_path, monkeypatch):
+    """A shortcuts-edit checkpoint is fully restorable: restore maps the
+    `users/<account>/shortcuts.vdf` member back onto the live file and the
+    preview shows the Non-Steam shortcuts change."""
+    from steam_manager.cli._checkpoint import make_checkpoint
+    from steam_manager.io import shortcuts_vdf
+
+    monkeypatch.setenv("STEAM_MANAGER_STEAM_ROOT", str(fake_steam))
+    monkeypatch.setenv("STEAM_MANAGER_POLICY_PATHS",
+                       str(Path(__file__).parent / "fixtures" / "policies_minimal.toml"))
+    monkeypatch.setenv("STEAM_MANAGER_BACKUP_ROOT", str(tmp_path / "backups"))
+    monkeypatch.setenv("STEAM_MANAGER_FORCE", "1")
+
+    sc_path = fake_steam / "userdata" / "72021823" / "config" / "shortcuts.vdf"
+    good = {"shortcuts": {"0": {"appid": 123456, "AppName": "Doom",
+                                "Exe": "/usr/bin/doom", "LaunchOptions": ""}}}
+    shortcuts_vdf.save(sc_path, good)
+    make_checkpoint(trigger="shortcuts-edit",
+                    files={"users/testuser/shortcuts.vdf": sc_path},
+                    users=["testuser"])
+
+    # The user wipes their shortcuts by accident.
+    shortcuts_vdf.save(sc_path, {"shortcuts": {}})
+
+    result = runner.invoke(cli.app, ["restore", "--last", "--yes"])
+    assert result.exit_code == 0
+    assert "Non-Steam shortcuts" in result.stdout   # diff preview panel
+    assert "Restored" in result.stdout and "shortcuts.vdf" in result.stdout
+    assert shortcuts_vdf.load(sc_path) == good
 
 
 def test_restore_skips_when_diff_empty(fake_steam, tmp_path, monkeypatch):

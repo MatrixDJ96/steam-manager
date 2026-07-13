@@ -24,18 +24,26 @@ from steam_manager.models import SteamContext, SteamUser
 _VALID_UNAME = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 
 
-def _user_localconfig_archname(name: str) -> str | None:
-    """Return the account name embedded in `users/<account>/localconfig.vdf`,
+def _user_archname(name: str, filename: str) -> str | None:
+    """Return the account name embedded in `users/<account>/<filename>`,
     or None if `name` doesn't match that exact shape."""
     parts = name.split("/")
     if (
         len(parts) == 3
         and parts[0] == "users"
-        and parts[2] == "localconfig.vdf"
+        and parts[2] == filename
         and _VALID_UNAME.fullmatch(parts[1])
     ):
         return parts[1]
     return None
+
+
+def _user_localconfig_archname(name: str) -> str | None:
+    return _user_archname(name, "localconfig.vdf")
+
+
+def _user_shortcuts_archname(name: str) -> str | None:
+    return _user_archname(name, "shortcuts.vdf")
 
 
 def _checkpoint_summary(c: dict) -> str:
@@ -50,12 +58,14 @@ def _checkpoint_summary(c: dict) -> str:
         if _VALID_UNAME.fullmatch(str(uname)):
             parts.append(f"[cyan]user[/cyan]:[bold cyan]{uname}[/bold cyan]")
     if not parts:
+        seen: set[str] = set()
         for name in c["files"]:
             if name == "config.vdf":
                 parts.append("[magenta]system[/magenta]")
             else:
-                uname = _user_localconfig_archname(name)
-                if uname is not None:
+                uname = _user_localconfig_archname(name) or _user_shortcuts_archname(name)
+                if uname is not None and uname not in seen:
+                    seen.add(uname)
                     parts.append(f"[cyan]user[/cyan]:[bold cyan]{uname}[/bold cyan]")
     return ", ".join(parts) if parts else "[dim](empty)[/dim]"
 
@@ -81,11 +91,25 @@ def _resolve_restore_targets(
     raw_unames: list[str] = list(chosen["manifest"].get("users", []))
     if not raw_unames:
         for name in chosen["files"]:
-            uname = _user_localconfig_archname(name)
-            if uname is not None:
+            uname = _user_localconfig_archname(name) or _user_shortcuts_archname(name)
+            if uname is not None and uname not in raw_unames:
                 raw_unames.append(uname)
 
     all_users = {u.account_name: u for u in discovery.list_users(ctx)}
+
+    def _confined_dest(uname: str, filename: str) -> Path | None:
+        """The user's on-disk destination for `filename`, or None (with a
+        warning) when it escapes the Steam root or can't be prepared."""
+        dest = all_users[uname].userdata_dir / "config" / filename
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if not dest.resolve().is_relative_to(ctx_root_resolved):
+                raise ValueError(f"destination outside Steam root: {dest}")
+        except (OSError, ValueError) as exc:
+            render.warning(f"Refusing to restore {uname}: {exc}")
+            return None
+        return dest
+
     for uname in raw_unames:
         if not _VALID_UNAME.fullmatch(str(uname)):
             render.warning(f"Skipping malformed user name in checkpoint: {uname!r}")
@@ -95,15 +119,14 @@ def _resolve_restore_targets(
                 f"User '{uname}' in checkpoint but no longer exists locally, skipping."
             )
             continue
-        dest = all_users[uname].userdata_dir / "config" / "localconfig.vdf"
-        try:
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            if not dest.resolve().is_relative_to(ctx_root_resolved):
-                raise ValueError(f"destination outside Steam root: {dest}")
-        except (OSError, ValueError) as exc:
-            render.warning(f"Refusing to restore {uname}: {exc}")
-            continue
-        targets[f"users/{uname}/localconfig.vdf"] = dest
+        if f"users/{uname}/localconfig.vdf" in chosen["files"]:
+            dest = _confined_dest(uname, "localconfig.vdf")
+            if dest is not None:
+                targets[f"users/{uname}/localconfig.vdf"] = dest
+        if f"users/{uname}/shortcuts.vdf" in chosen["files"]:
+            sdest = _confined_dest(uname, "shortcuts.vdf")
+            if sdest is not None:
+                targets[f"users/{uname}/shortcuts.vdf"] = sdest
     return targets, all_users
 
 
@@ -113,7 +136,7 @@ def restore(
     yes: bool = typer.Option(False, "--yes", help="Skip confirmation"),
     force: bool = typer.Option(False, "--force", help="Ignore Steam-running check"),
 ):
-    """Restore a previous checkpoint archive (config.vdf + every user's localconfig.vdf)."""
+    """Restore a previous checkpoint archive (config.vdf, per-user localconfig.vdf, and any archived shortcuts.vdf)."""
     check_steam_closed(force)
 
     ctx = discovery.discover(steam_root=steam_root())
@@ -147,13 +170,15 @@ def restore(
     # extracted this archive? Empty diff means the archive is identical to
     # the live state — skip the extraction entirely (it would be a no-op).
     # Only consider users whose targets passed validation above.
-    valid_unames = [
-        _user_localconfig_archname(n) for n in targets
-        if _user_localconfig_archname(n) is not None
-    ]
+    def _target_unames(archname) -> list[str]:
+        return [u for u in (archname(n) for n in targets) if u is not None]
+
+    valid_unames = _target_unames(_user_localconfig_archname)
+    shortcuts_unames = _target_unames(_user_shortcuts_archname)
     users_list = list(all_users.values())
     diff = compute_restore_diff(
         Path(chosen["path"]), ctx, users_list, valid_unames,
+        shortcuts_users=shortcuts_unames,
     )
 
     if not diff:
@@ -188,6 +213,12 @@ def restore(
         if uname is not None:
             render.success(
                 f"Restored [bold]localconfig.vdf[/bold] "
+                f"([cyan]user[/cyan]:[bold cyan]{uname}[/bold cyan])"
+            )
+        uname = _user_shortcuts_archname(name)
+        if uname is not None:
+            render.success(
+                f"Restored [bold]shortcuts.vdf[/bold] "
                 f"([cyan]user[/cyan]:[bold cyan]{uname}[/bold cyan])"
             )
 

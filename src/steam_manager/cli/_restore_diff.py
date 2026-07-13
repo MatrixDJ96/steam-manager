@@ -19,8 +19,18 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from steam_manager.io import backups, config_vdf, discovery, localconfig_vdf
+from steam_manager.io import backups, config_vdf, discovery, localconfig_vdf, shortcuts_vdf
+from steam_manager.io._vdf_util import ci_get
 from steam_manager.models import SteamApp, SteamContext, SteamUser
+
+# Marks "file exists but can't be parsed" (vs "file absent" = None) in the
+# shortcuts diff. Carried in a `(_UNREADABLE, raw_bytes)` pair so two
+# differently-corrupt files still compare unequal and the change row shows.
+_UNREADABLE = object()
+
+
+def _is_unreadable(data) -> bool:
+    return isinstance(data, tuple) and bool(data) and data[0] is _UNREADABLE
 
 
 def _entry_compat_name(entry) -> str | None:
@@ -91,11 +101,73 @@ def _launch_diff(archived_localconfigs: dict[str, Path],
     return out
 
 
+def _load_shortcuts(path: Path):
+    """Parsed shortcuts.vdf dict, None when absent, an `(_UNREADABLE, bytes)`
+    pair on a parse failure (keyed by content, so two differently-corrupt
+    files stay distinct in the diff)."""
+    if not path.exists():
+        return None
+    try:
+        return shortcuts_vdf.load(path)
+    except Exception:  # noqa: BLE001 — any parse failure means "unreadable"
+        try:
+            raw = path.read_bytes()
+        except OSError:
+            raw = None
+        return (_UNREADABLE, raw)
+
+
+def _shortcuts_label(data) -> str | None:
+    """Compact content label for one side of a shortcuts diff: entry count
+    plus the AppNames (truncated), 'unreadable' for a corrupt file."""
+    if data is None:
+        return None
+    if _is_unreadable(data):
+        return "unreadable"
+    entries = ci_get(data, "shortcuts") or {}
+    names = sorted(
+        str(ci_get(e, "appname") or "?")
+        for e in entries.values() if isinstance(e, dict)
+    )
+    label = f"{len(names)} shortcut(s)"
+    if names:
+        joined = ", ".join(names)
+        if len(joined) > 40:
+            joined = joined[:39] + "…"
+        label += f" — {joined}"
+    return label
+
+
+def _shortcuts_diff(archived_shortcuts: dict[str, Path],
+                    user_by_name: dict[str, SteamUser]) -> list[dict]:
+    """Per-user non-Steam shortcuts changes between each live shortcuts.vdf
+    and the archive's. One row per user (the file is restored wholesale, so
+    the preview is a content summary, not a per-entry diff)."""
+    out: list[dict] = []
+    for uname, archive_sc in archived_shortcuts.items():
+        if uname not in user_by_name:
+            continue
+        cur = _load_shortcuts(shortcuts_vdf.shortcuts_path(user_by_name[uname]))
+        arc = _load_shortcuts(archive_sc)
+        if cur == arc:
+            continue
+        out.append({
+            "appid": "-", "name": "shortcuts.vdf",
+            "compatdata_path": "", "install_path": "",
+            "field": "shortcuts",
+            "old": _shortcuts_label(cur), "new": _shortcuts_label(arc),
+            "user": uname,
+        })
+    return out
+
+
 def compute_restore_diff(
     archive_path: Path,
     ctx: SteamContext,
     users: list[SteamUser],
     users_in_archive: list[str],
+    *,
+    shortcuts_users: list[str] = (),
 ) -> list[dict]:
     """Diff the archive's contents against the current on-disk state.
 
@@ -104,8 +176,9 @@ def compute_restore_diff(
 
     `users_in_archive` is the list of account names whose `localconfig.vdf`
     was packed into the checkpoint (typically from `chosen["manifest"]
-    .get("users", [])`). Users present in the archive but no longer in
-    `users` are skipped silently.
+    .get("users", [])`); `shortcuts_users` the ones whose `shortcuts.vdf`
+    was. Users present in the archive but no longer in `users` are skipped
+    silently.
     """
     changes: list[dict] = []
     apps_by_id = {a.appid: a for a in discovery.list_apps(ctx)}
@@ -120,11 +193,17 @@ def compute_restore_diff(
             dest = tmp_dir / "users" / uname / "localconfig.vdf"
             targets[f"users/{uname}/localconfig.vdf"] = dest
             archived_localconfigs[uname] = dest
+        archived_shortcuts: dict[str, Path] = {}
+        for uname in shortcuts_users:
+            dest = tmp_dir / "users" / uname / "shortcuts.vdf"
+            targets[f"users/{uname}/shortcuts.vdf"] = dest
+            archived_shortcuts[uname] = dest
 
         extracted = backups.extract_checkpoint(archive_path, targets)
 
         if "config.vdf" in extracted:
             changes += _compat_diff(archive_config, ctx, apps_by_id)
         changes += _launch_diff(archived_localconfigs, user_by_name, apps_by_id)
+        changes += _shortcuts_diff(archived_shortcuts, user_by_name)
 
     return changes

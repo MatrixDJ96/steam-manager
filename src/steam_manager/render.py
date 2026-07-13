@@ -12,6 +12,7 @@ import questionary
 from prompt_toolkit.keys import Keys
 from rich import box
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
@@ -168,8 +169,10 @@ def _diff_table(items: list[dict], col_min: dict[str, int]) -> Table:
     t.add_column("From", style="red", no_wrap=True, min_width=col_min["from"])
     t.add_column("To", style="green", no_wrap=True, min_width=col_min["to"])
     for c in items:
-        old = c["old"] if c["old"] is not None else "[dim]<none>[/dim]"
-        new = c["new"] if c["new"] is not None else "[dim]<none>[/dim]"
+        # escape(): the From/To values are user data (launch options, shortcut
+        # names) — a bracketed value must render literally, not as markup.
+        old = escape(str(c["old"])) if c["old"] is not None else "[dim]<none>[/dim]"
+        new = escape(str(c["new"])) if c["new"] is not None else "[dim]<none>[/dim]"
         t.add_row(link_cell(c.get("compatdata_path", ""), c["appid"]),
                   link_cell(c.get("install_path", ""), c["name"]), old, new)
     return t
@@ -177,24 +180,36 @@ def _diff_table(items: list[dict], col_min: dict[str, int]) -> Table:
 
 def _diff_field_panels(console: Console, section_changes: list[dict],
                        prefix: str | None, col_min: dict[str, int]) -> None:
-    """Print one section's panels: Compat tool, then Launch options per user."""
+    """Print one section's panels: Compat tool, Launch options per user, then
+    Non-Steam shortcuts per user."""
     def titled(title: str) -> str:
         return f"{prefix} [dim]·[/dim] {title}" if prefix else title
+
+    def _by_user(field: str) -> dict[str, list[dict]]:
+        grouped: dict[str, list[dict]] = {}
+        for c in section_changes:
+            if c["field"] == field:
+                grouped.setdefault(c.get("user") or "-", []).append(c)
+        return grouped
+
+    def _user_title(base: str, user: str) -> str:
+        return f"{base} [dim]—[/dim] [cyan]user[/cyan]:[bold cyan]{user}[/bold cyan]"
 
     compat = [c for c in section_changes if c["field"] == "compat_tool"]
     if compat:
         console.print(_panel(_diff_table(compat, col_min), titled("Compat tool"),
                              border_style=PANEL_BORDER_WARN))
 
-    by_user: dict[str, list[dict]] = {}
-    for c in section_changes:
-        if c["field"] == "launch_options":
-            by_user.setdefault(c.get("user") or "-", []).append(c)
+    by_user = _by_user("launch_options")
     multi_user = len(by_user) > 1
     for user, items in by_user.items():
-        title = (f"Launch options [dim]—[/dim] [cyan]user[/cyan]:[bold cyan]{user}[/bold cyan]"
-                 if multi_user else "Launch options")
+        title = _user_title("Launch options", user) if multi_user else "Launch options"
         console.print(_panel(_diff_table(items, col_min), titled(title),
+                             border_style=PANEL_BORDER_WARN))
+
+    for user, items in _by_user("shortcuts").items():
+        console.print(_panel(_diff_table(items, col_min),
+                             titled(_user_title("Non-Steam shortcuts", user)),
                              border_style=PANEL_BORDER_WARN))
 
 
