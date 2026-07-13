@@ -263,8 +263,10 @@ steam-manager scopebuddy           # dashboard TUI on a terminal (alias: scb)
 The dashboard lists every installed game with its scopebuddy status
 (`active`, `missing`, or `inactive`) and whether its per-game `.conf` exists,
 plus a separate table of orphan configs (a `.conf` with no matching installed
-game). Move with `↑`/`↓`; `/` filters the games table, `r` reloads from disk,
-`q` quits.
+game). A `<name>.local.conf` is ScopeBuddy's local override of `<name>.conf`:
+it rides its base config and gets no row of its own — it only appears when the
+base file is absent (a dangling override). Move with `↑`/`↓`; `/` filters the
+games table, `r` reloads from disk, `q` quits.
 
 - `Enter` (or a click) on a row opens its action modal: create the L1 stub,
   open the `.conf` in `$EDITOR`, or delete an orphan config.
