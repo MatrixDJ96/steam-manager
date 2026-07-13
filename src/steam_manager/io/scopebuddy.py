@@ -58,3 +58,9 @@ def init_stub(target: Path, name: str, force: bool = False) -> None:
         raise FileExistsError(target)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(_STUB_TEMPLATE.format(name=name))
+
+
+def delete_config(path: Path) -> None:
+    """Remove one per-game config file. Propagates FileNotFoundError when the
+    file is already gone — callers decide whether that is an error."""
+    path.unlink()

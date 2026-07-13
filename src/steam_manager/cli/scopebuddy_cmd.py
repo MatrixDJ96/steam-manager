@@ -8,15 +8,12 @@ short shortcut — `scopebuddy` is the canonical name.
 """
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import typer
 
 from steam_manager import policy, render
 from steam_manager.cli import _appinfo
 from steam_manager.cli._appinfo import is_listable
-from steam_manager.cli._common import ExitCode, policy_paths, steam_root
+from steam_manager.cli._common import ExitCode, policy_paths, scb_dir, steam_root
 from steam_manager.cli._targets import (
     effective_target_spec,
     resolve_target_users,
@@ -24,13 +21,6 @@ from steam_manager.cli._targets import (
 )
 from steam_manager.io import discovery, localconfig_vdf
 from steam_manager.io import scopebuddy as scb_mod
-
-
-def _scb_dir() -> Path:
-    override = os.environ.get("STEAM_MANAGER_SCB_DIR")
-    if override:
-        return Path(override)
-    return Path.home() / ".config" / "scopebuddy" / "games" / "steam"
 
 
 scopebuddy_app = typer.Typer(help="ScopeBuddy: observe + init of base configs.")
@@ -88,7 +78,7 @@ def _scb_observe(user: str | None = None, all_users: bool = False):
     installed_ids = [a.appid for a in games]
     by_id = {a.appid: a for a in games}
 
-    obs = scb_mod.observe(_scb_dir(), installed_ids, launch)
+    obs = scb_mod.observe(scb_dir(), installed_ids, launch)
 
     missing_rows = sorted(
         [(
@@ -103,8 +93,8 @@ def _scb_observe(user: str | None = None, all_users: bool = False):
     orphan_rows = sorted(
         [(
             appid,
-            render.link_cell(str(_scb_dir() / f"{appid}.conf"),
-                             str(_scb_dir() / f"{appid}.conf")),
+            render.link_cell(str(scb_dir() / f"{appid}.conf"),
+                             str(scb_dir() / f"{appid}.conf")),
          )
          for appid in obs.orphan_configs],
         key=lambda r: (int(r[0]) if r[0].isdigit() else 10**18, r[0]),
@@ -174,14 +164,14 @@ def scb_init_cmd(
             raise typer.Exit(ExitCode.PARSE_ERROR)
         primary = target_users[0]
         launch = {a.appid: localconfig_vdf.get_launch_options(primary, a.appid) for a in games}
-        obs = scb_mod.observe(_scb_dir(), list(by_id.keys()), launch)
+        obs = scb_mod.observe(scb_dir(), list(by_id.keys()), launch)
         targets = obs.missing_configs
     else:
         games_sorted = sorted(games, key=lambda a: a.name.lower())
         choices = []
         all_exist = True
         for a in games_sorted:
-            exists = (_scb_dir() / f"{a.appid}.conf").exists()
+            exists = (scb_dir() / f"{a.appid}.conf").exists()
             if not exists:
                 all_exist = False
             choices.append((a.appid, f"{a.name} ({a.appid})", exists))
@@ -202,7 +192,7 @@ def scb_init_cmd(
                 f"AppID [bold]{tid}[/bold] not installed or not a game, skipping."
             )
             continue
-        target_path = _scb_dir() / f"{tid}.conf"
+        target_path = scb_dir() / f"{tid}.conf"
         try:
             scb_mod.init_stub(target_path, by_id[tid].name, force=force)
             render.success(f"Created [dim]{target_path}[/dim]")

@@ -69,6 +69,14 @@ def backup_root() -> Path:
     return Path.home() / ".local" / "state" / "steam-manager" / "backups"
 
 
+def scb_dir() -> Path:
+    """Honor STEAM_MANAGER_SCB_DIR (used by tests)."""
+    override = os.environ.get("STEAM_MANAGER_SCB_DIR")
+    if override:
+        return Path(override)
+    return Path.home() / ".config" / "scopebuddy" / "games" / "steam"
+
+
 def iso_timestamp() -> str:
     """Filesystem-safe ISO-8601 timestamp used in checkpoint archive names.
 
