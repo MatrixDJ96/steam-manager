@@ -294,6 +294,30 @@ def test_restore_recovers_shortcuts(fake_steam, tmp_path, monkeypatch):
     assert shortcuts_vdf.load(sc_path) == good
 
 
+def test_restore_recovers_scopebuddy_conf(fake_steam, tmp_path, monkeypatch):
+    """A scb-delete checkpoint is restorable: the scopebuddy/<stem>.conf member
+    maps back to the ScopeBuddy dir and the preview shows the change."""
+    from steam_manager.cli._checkpoint import make_checkpoint
+
+    monkeypatch.setenv("STEAM_MANAGER_STEAM_ROOT", str(fake_steam))
+    monkeypatch.setenv("STEAM_MANAGER_POLICY_PATHS",
+                       str(Path(__file__).parent / "fixtures" / "policies_minimal.toml"))
+    monkeypatch.setenv("STEAM_MANAGER_BACKUP_ROOT", str(tmp_path / "backups"))
+    monkeypatch.setenv("STEAM_MANAGER_SCB_DIR", str(tmp_path / "scb"))
+    monkeypatch.setenv("STEAM_MANAGER_FORCE", "1")
+
+    conf = tmp_path / "scb" / "999.conf"
+    conf.parent.mkdir(parents=True)
+    conf.write_text("# hand-tuned\nSCB_NOSCOPE=1\n")
+    make_checkpoint(trigger="scb-delete", files={"scopebuddy/999.conf": conf})
+    conf.unlink()                     # what the TUI delete does
+
+    result = runner.invoke(cli.app, ["restore", "--last", "--yes"])
+    assert result.exit_code == 0
+    assert "ScopeBuddy configs" in result.stdout
+    assert conf.read_text() == "# hand-tuned\nSCB_NOSCOPE=1\n"
+
+
 def test_restore_skips_when_diff_empty(fake_steam, tmp_path, monkeypatch):
     """Restore must NOT extract when the archive is identical to disk."""
     monkeypatch.setenv("STEAM_MANAGER_STEAM_ROOT", str(fake_steam))

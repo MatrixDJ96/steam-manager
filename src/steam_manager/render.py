@@ -212,6 +212,12 @@ def _diff_field_panels(console: Console, section_changes: list[dict],
                              titled(_user_title("Non-Steam shortcuts", user)),
                              border_style=PANEL_BORDER_WARN))
 
+    scb = [c for c in section_changes if c["field"] == "scb_conf"]
+    if scb:
+        console.print(_panel(_diff_table(scb, col_min),
+                             titled("ScopeBuddy configs"),
+                             border_style=PANEL_BORDER_WARN))
+
 
 def diff_table_str(changes: list[dict]) -> str:
     """Renders diff output grouped by games/applications, then by field type and

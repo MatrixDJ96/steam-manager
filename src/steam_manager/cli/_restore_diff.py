@@ -161,6 +161,47 @@ def _shortcuts_diff(archived_shortcuts: dict[str, Path],
     return out
 
 
+def _scb_content(path: Path):
+    """Raw bytes of a ScopeBuddy conf for equality comparison: None when the
+    file is absent, `_UNREADABLE` when it exists but can't be read."""
+    if not path.exists():
+        return None
+    try:
+        return path.read_bytes()
+    except OSError:
+        return _UNREADABLE
+
+
+def _scb_label(path: Path) -> str:
+    """Compact content label for one side of a ScopeBuddy conf diff: 'absent'
+    when missing, a line count otherwise, 'unreadable' on a read error."""
+    if not path.exists():
+        return "absent"
+    try:
+        return f"{len(path.read_text().splitlines())} line(s)"
+    except OSError:
+        return "unreadable"
+
+
+def _scb_diff(archived_scb: dict[str, Path], scb_dir: Path) -> list[dict]:
+    """Per-stem ScopeBuddy .conf changes between each live config and the
+    archive's. One row per differing conf (the file is restored wholesale, so
+    the preview is a line-count summary, not a per-line diff)."""
+    out: list[dict] = []
+    for stem, archive_conf in sorted(archived_scb.items()):
+        live = scb_dir / f"{stem}.conf"
+        if _scb_content(live) == _scb_content(archive_conf):
+            continue
+        out.append({
+            "appid": stem, "name": f"{stem}.conf",
+            "compatdata_path": "", "install_path": "",
+            "field": "scb_conf",
+            "old": _scb_label(live), "new": _scb_label(archive_conf),
+            "user": None,
+        })
+    return out
+
+
 def compute_restore_diff(
     archive_path: Path,
     ctx: SteamContext,
@@ -168,6 +209,8 @@ def compute_restore_diff(
     users_in_archive: list[str],
     *,
     shortcuts_users: list[str] = (),
+    scb_stems: list[str] = (),
+    scb_dir: Path | None = None,
 ) -> list[dict]:
     """Diff the archive's contents against the current on-disk state.
 
@@ -178,7 +221,9 @@ def compute_restore_diff(
     was packed into the checkpoint (typically from `chosen["manifest"]
     .get("users", [])`); `shortcuts_users` the ones whose `shortcuts.vdf`
     was. Users present in the archive but no longer in `users` are skipped
-    silently.
+    silently. `scb_stems` is the list of ScopeBuddy conf stems packed as
+    `scopebuddy/<stem>.conf` members; each is diffed against
+    `scb_dir/<stem>.conf` (both keyword args are supplied together).
     """
     changes: list[dict] = []
     apps_by_id = {a.appid: a for a in discovery.list_apps(ctx)}
@@ -198,6 +243,11 @@ def compute_restore_diff(
             dest = tmp_dir / "users" / uname / "shortcuts.vdf"
             targets[f"users/{uname}/shortcuts.vdf"] = dest
             archived_shortcuts[uname] = dest
+        archived_scb: dict[str, Path] = {}
+        for stem in scb_stems:
+            dest = tmp_dir / "scopebuddy" / f"{stem}.conf"
+            targets[f"scopebuddy/{stem}.conf"] = dest
+            archived_scb[stem] = dest
 
         extracted = backups.extract_checkpoint(archive_path, targets)
 
@@ -205,5 +255,7 @@ def compute_restore_diff(
             changes += _compat_diff(archive_config, ctx, apps_by_id)
         changes += _launch_diff(archived_localconfigs, user_by_name, apps_by_id)
         changes += _shortcuts_diff(archived_shortcuts, user_by_name)
+        if scb_dir is not None:
+            changes += _scb_diff(archived_scb, scb_dir)
 
     return changes

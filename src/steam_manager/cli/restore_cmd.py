@@ -7,7 +7,7 @@ from pathlib import Path
 import typer
 
 from steam_manager import render
-from steam_manager.cli._common import ExitCode, backup_root, steam_root
+from steam_manager.cli._common import ExitCode, backup_root, scb_dir, steam_root
 from steam_manager.cli._restore_diff import compute_restore_diff
 from steam_manager.cli._steam_guard import check_steam_closed
 from steam_manager.cli.app import app
@@ -46,6 +46,23 @@ def _user_shortcuts_archname(name: str) -> str | None:
     return _user_archname(name, "shortcuts.vdf")
 
 
+def _scb_conf_archname(name: str) -> str | None:
+    """Return the conf stem embedded in `scopebuddy/<stem>.conf`, or None if
+    `name` doesn't match that exact shape. The stem is validated against the
+    same `_VALID_UNAME` pattern used for account names, so a malicious manifest
+    can't smuggle a `../` token into the ScopeBuddy destination path."""
+    suffix = ".conf"
+    parts = name.split("/")
+    if (
+        len(parts) == 2
+        and parts[0] == "scopebuddy"
+        and parts[1].endswith(suffix)
+        and _VALID_UNAME.fullmatch(parts[1][: -len(suffix)])
+    ):
+        return parts[1][: -len(suffix)]
+    return None
+
+
 def _checkpoint_summary(c: dict) -> str:
     """One-line description of a checkpoint: which system/user files it holds.
 
@@ -67,6 +84,8 @@ def _checkpoint_summary(c: dict) -> str:
                 if uname is not None and uname not in seen:
                     seen.add(uname)
                     parts.append(f"[cyan]user[/cyan]:[bold cyan]{uname}[/bold cyan]")
+    if any(_scb_conf_archname(name) is not None for name in c["files"]):
+        parts.append("[magenta]scopebuddy[/magenta]")
     return ", ".join(parts) if parts else "[dim](empty)[/dim]"
 
 
@@ -127,6 +146,16 @@ def _resolve_restore_targets(
             sdest = _confined_dest(uname, "shortcuts.vdf")
             if sdest is not None:
                 targets[f"users/{uname}/shortcuts.vdf"] = sdest
+
+    # ScopeBuddy confs live outside the Steam root (~/.config/scopebuddy), so
+    # they get no root confinement; the validated stem in `_scb_conf_archname`
+    # is what keeps the destination path safe.
+    for name in chosen["files"]:
+        stem = _scb_conf_archname(name)
+        if stem is not None:
+            dest = scb_dir() / f"{stem}.conf"
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            targets[name] = dest
     return targets, all_users
 
 
@@ -175,10 +204,12 @@ def restore(
 
     valid_unames = _target_unames(_user_localconfig_archname)
     shortcuts_unames = _target_unames(_user_shortcuts_archname)
+    scb_stems = [s for s in (_scb_conf_archname(n) for n in targets) if s is not None]
     users_list = list(all_users.values())
     diff = compute_restore_diff(
         Path(chosen["path"]), ctx, users_list, valid_unames,
         shortcuts_users=shortcuts_unames,
+        scb_stems=scb_stems, scb_dir=scb_dir(),
     )
 
     if not diff:
@@ -220,6 +251,11 @@ def restore(
             render.success(
                 f"Restored [bold]shortcuts.vdf[/bold] "
                 f"([cyan]user[/cyan]:[bold cyan]{uname}[/bold cyan])"
+            )
+        stem = _scb_conf_archname(name)
+        if stem is not None:
+            render.success(
+                f"Restored [bold]{stem}.conf[/bold] ([magenta]scopebuddy[/magenta])"
             )
 
     render.success(
