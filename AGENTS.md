@@ -18,10 +18,10 @@ pip install -e ".[dev]"                     # add [build] for PyInstaller
 ## Common commands
 
 ```bash
-pytest                                      # full suite (316 tests; Textual Pilot tests marked `tui`)
+pytest                                      # full suite (333 tests; Textual Pilot tests marked `tui`)
 pytest -m "not tui"                          # fast lane: skip the Textual Pilot tests (sub-2s)
 pytest tests/test_cli.py -v                 # one file
-pytest tests/test_architecture.py           # layering invariants (9 tests)
+pytest tests/test_architecture.py           # layering invariants (10 tests)
 pytest -k "diff and appid"                  # one test by name pattern
 pytest --cov                                # opt-in coverage (uses pyproject config)
 
@@ -54,14 +54,14 @@ src/steam_manager/
 │   ├── policies_toml.py  user policy file R/W (tomlkit-based, preserves comments)
 │   ├── backups.py        atomic .tar.gz checkpoint API (create/list/extract/prune)
 │   ├── appinfo.py        parser for Steam's binary appinfo.vdf cache
-│   ├── scopebuddy.py     observe missing/orphan configs, init L1 stub
+│   ├── scopebuddy.py     observe missing/orphan configs, init L1 stub, delete one config
 │   ├── compat_tools.py   discovery of installed compat tools (Proton custom + official)
 │   ├── github_releases.py GitHub Releases API discovery for the self-update flow
 │   └── _vdf_util.py      private: ci_get() for case-insensitive VDF lookups
 │
 └── cli/                  Typer + rich-click layer
     ├── app.py            `app = typer.Typer(...)`, version callback, root callback
-    ├── _common.py        ExitCode, USER_POLICY_PATH, steam_root, backup_root, iso_timestamp
+    ├── _common.py        ExitCode, USER_POLICY_PATH, steam_root, backup_root, scb_dir, scb_ui_mode, iso_timestamp
     ├── _rich.py          install_rich_click() — Click monkey-patch for aligned --help columns
     ├── _editor.py        choose_editor() used by `shortcuts edit`
     ├── _checkpoint.py    make_checkpoint() + build_steam_files() — single manifest schema
@@ -74,7 +74,8 @@ src/steam_manager/
     ├── _wizard_core.py   pure config core — Change, load_state, reducers, apply (no Rich/questionary/Textual)
     ├── _wizard.py        classic `config --classic` questionary flow (drives _wizard_core)
     ├── _config_entry.py  config dispatch: TUI vs classic vs scriptable + non-TTY guard
-    ├── tui/              Textual TUI — the only package importing textual (app.py, widgets.py, app.tcss)
+    ├── _scb_core.py      pure ScopeBuddy dashboard core — load_rows → ScbRow (no Rich/questionary/Textual)
+    ├── tui/              Textual TUI — the only package importing textual (app.py, scb_app.py, widgets.py, app.tcss)
     ├── _list_render.py   render_app_groups() — list's Games/Applications panels
     ├── list_cmd.py       `list` — game inventory with compat tool + per-user launch options
     ├── diff_cmd.py       `diff` — preview policy drift (read-only; exit 1 if drift)
@@ -85,7 +86,7 @@ src/steam_manager/
     ├── restore_cmd.py    `restore` — interactive restore from a previous checkpoint
     ├── update_cmd.py     `update` — self-update binary from GitHub releases
     ├── config_cmd.py     `config` sub-typer (get/set/unset/path/wizard); bare/wizard delegate to _config_entry
-    ├── scopebuddy_cmd.py `scopebuddy` sub-typer for per-game ScopeBuddy stubs (observe/init)
+    ├── scopebuddy_cmd.py `scopebuddy` sub-typer: dashboard TUI default + observe/init subcommands
     ├── shortcuts_cmd.py  `shortcuts` sub-typer for the binary shortcuts.vdf of non-Steam games (path/show/edit)
     └── __init__.py       wires everything: side-effect imports of *_cmd, add_typer, main()
 ```
@@ -97,7 +98,7 @@ Layer rules (tested by `tests/test_architecture.py`):
 - `safety.py` must not import from `cli/`, `render`, `policy`
 - `models.py` must not import any project module
 - `cli/` consumes `io/` only through its public API (no `_`-prefixed io names; `_vdf_util` is the one documented exception)
-- `textual` may be imported only under `cli/tui/`; nothing outside `cli/tui/` imports `cli.tui` at module scope (so non-TUI commands never load Textual). `cli/_wizard_core.py` must stay render-free — it must NOT import `_drift`/`_targets`/`render`/questionary/Textual (drift is computed in the TUI layer instead).
+- `textual` may be imported only under `cli/tui/`; nothing outside `cli/tui/` imports `cli.tui` at module scope (so non-TUI commands never load Textual). `cli/_wizard_core.py` must stay render-free — it must NOT import `_drift`/`_targets`/`render`/questionary/Textual (drift is computed in the TUI layer instead). `cli/_scb_core.py` stays render-free on the same rule — it must NOT import `render`/`_drift`/`_targets`/questionary/Textual (the ScopeBuddy dashboard core stays terminal-free).
 
 Sibling helpers in `cli/_*.py` may import each other freely; only the layer boundaries above are enforced.
 
@@ -127,7 +128,7 @@ The list of "what counts as a game" is decided by parsing Steam's binary `appinf
 
 ### Backups are archives, not directories
 
-Every destructive operation (`apply`, `clear`, `backup`, `shortcuts edit`) calls `cli._checkpoint.make_checkpoint()`, which builds the standardized manifest and delegates to `io.backups.create_checkpoint()`. The result is a single `<timestamp>.tar.gz` in `~/.local/state/steam-manager/backups/` containing `manifest.json` plus the snapshotted files. Atomic via temp file + rename. Adding a new trigger is a one-line change in `make_checkpoint()` — don't open-code a new manifest pattern. `restore` maps every member kind (`config.vdf`, per-user `localconfig.vdf` and `shortcuts.vdf`) back to its live location.
+Every destructive operation (`apply`, `clear`, `backup`, `shortcuts edit`, and the ScopeBuddy dashboard's orphan delete) calls `cli._checkpoint.make_checkpoint()`, which builds the standardized manifest and delegates to `io.backups.create_checkpoint()`. The result is a single `<timestamp>.tar.gz` in `~/.local/state/steam-manager/backups/` containing `manifest.json` plus the snapshotted files. Atomic via temp file + rename. Adding a new trigger is a one-line change in `make_checkpoint()` — don't open-code a new manifest pattern. `restore` maps every member kind (`config.vdf`, per-user `localconfig.vdf` and `shortcuts.vdf`, and `scopebuddy/<stem>.conf`) back to its live location.
 
 The manifest schema is intentionally minimal: `created_at`, `trigger`, `system` (bool), `users` (list of account names), `files` (archive members). It does NOT store the drift list — `restore` always computes a fresh diff on the fly (`cli/_restore_diff.compute_restore_diff()`) by extracting the archive into a tempdir and comparing it against the live state. The preview is rendered with the same `render.diff_table_str()` that `diff` uses, so the visual is consistent across both commands.
 
@@ -148,6 +149,7 @@ Tests never touch the real Steam install. The `fake_steam` fixture in `tests/con
 - `STEAM_MANAGER_USER_POLICY` — overrides just the user policy path (factory still merged on top)
 - `STEAM_MANAGER_BACKUP_ROOT` — overrides `~/.local/state/.../backups`
 - `STEAM_MANAGER_SCB_DIR` — overrides the ScopeBuddy configs dir (`~/.config/scopebuddy/games/steam/`)
+- `STEAM_MANAGER_SCB_UI` — picks the bare `scopebuddy` front-end (`tui`/`observe`); the terminal-interactivity default applies when unset
 - `STEAM_MANAGER_COMPAT_DIRS` — colon-separated system-wide `compatibilitytools.d/` dirs (replaces the `/usr/share/steam` + `/usr/local/share/steam` defaults); the `_isolate_system_compat_dirs` autouse fixture sets it empty so real system Proton builds never leak into tests
 - `STEAM_MANAGER_FORCE` — when `"1"`, equivalent to passing `--force` (skips Steam-running check)
 - `STEAM_MANAGER_CONFIG_UI` — picks the `config` editor front-end (`tui`/`classic`); flags still win
@@ -175,5 +177,5 @@ CI runs `pytest` on a matrix of Python `[3.11, 3.12, 3.13]`. If you bump `requir
 The remote is SSH (`git@github.com:MatrixDJ96/steam-manager.git`).
 
 ---
-*Last updated: 2026-06-03*
+*Last updated: 2026-07-13*
 *Next review: 2026-12-03 (every 3-6 months)*

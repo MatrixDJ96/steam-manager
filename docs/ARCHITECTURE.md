@@ -100,9 +100,11 @@ this with AST inspection.
 │       ├── _wizard_core.py          # pure, render-free config core (Change model, load_state, reducers, apply)
 │       ├── _wizard.py               # classic questionary `config --classic` flow (drives _wizard_core)
 │       ├── _config_entry.py         # config dispatch: TUI vs classic vs scriptable + non-TTY guard
+│       ├── _scb_core.py             # pure, render-free ScopeBuddy dashboard core (load_rows → ScbRow)
 │       ├── tui/                      # Textual TUI (the only package importing textual)
 │       │   ├── app.py               #   ConfigApp on _wizard_core: one-screen editor + async drift
-│       │   ├── widgets.py           #   modal screens (game editor, settings hub, pickers, confirm)
+│       │   ├── scb_app.py           #   ScbApp on _scb_core: ScopeBuddy dashboard (status, init, delete)
+│       │   ├── widgets.py           #   modal screens (game editor, settings hub, pickers, confirm, scb row)
 │       │   └── app.tcss             #   stylesheet (package data)
 │       ├── _list_render.py          # render_app_groups() — list's Games/Applications panels
 │       ├── list_cmd.py              # `list` — game inventory with compat tool + per-user launch options
@@ -114,13 +116,13 @@ this with AST inspection.
 │       ├── restore_cmd.py           # `restore` — interactive restore from a previous checkpoint
 │       ├── update_cmd.py            # `update` — self-update binary from GitHub releases
 │       ├── config_cmd.py            # `config` sub-typer (get/set/unset/path/wizard); bare/wizard delegate to _config_entry
-│       ├── scopebuddy_cmd.py        # `scopebuddy` sub-typer for per-game ScopeBuddy stubs (observe/init)
+│       ├── scopebuddy_cmd.py        # `scopebuddy` sub-typer: dashboard TUI default + observe/init
 │       └── shortcuts_cmd.py         # `shortcuts` sub-typer for the binary shortcuts.vdf of non-Steam games (path/show/edit)
 ├── tests/
 │   ├── fixtures/                    # synthetic VDF + TOML fixtures
 │   ├── conftest.py                  # fake_steam fixture
 │   ├── test_architecture.py         # AST-based layering invariants
-│   └── test_*.py                    # 316 tests (Textual Pilot tests marked `tui`)
+│   └── test_*.py                    # 333 tests (Textual Pilot tests marked `tui`)
 └── docs/
     ├── HOWTO.md                     # cookbook for common scenarios
     ├── REFERENCE.md                 # operator reference (schema, exit codes, env vars)
@@ -180,6 +182,8 @@ through `io/_vdf_util.ci_get()`.
   launch_options)` returns a `ScopeBuddyObservation` with
   `games_with_scb_launch` / `missing_configs` / `orphan_configs`.
   `init_stub(target_path, name, force)` writes a minimal two-line stub.
+  `delete_config(path)` removes one per-game config file (used by the
+  dashboard's orphan delete; propagates `FileNotFoundError`).
 - **`compat_tools.py`** — `list_compat_tools(ctx) -> list[CompatTool]`.
   Discovers Proton/GE-Proton/etc. from two sources: custom tools (one
   `compatibilitytool.vdf` each) found across every `compatibilitytools.d/`
@@ -208,8 +212,9 @@ imports.
 Shared CLI helpers (private to the cli/ layer):
 
 - **`_common.py`** — `ExitCode`, `USER_POLICY_PATH`, `steam_root()`,
-  `policy_paths()`, `backup_root()`, `iso_timestamp()`. Honors the
-  `STEAM_MANAGER_*` env-var overrides used by tests.
+  `policy_paths()`, `backup_root()`, `scb_dir()`, `scb_ui_mode()`,
+  `iso_timestamp()`. Honors the `STEAM_MANAGER_*` env-var overrides used by
+  tests.
 - **`_rich.py`** — `install_rich_click(app)`: the monkey-patch chain that
   rewires Click to rich-click with aligned `--help` columns. Called by
   `main()` exactly once before dispatch.
@@ -266,6 +271,25 @@ The `config` editor is a **shared pure core with two front-ends**:
 - **`_wizard.py`** — the classic questionary flow (`--classic`), also driving
   `_wizard_core`.
 
+The `scopebuddy` dashboard mirrors that split with its own pure core and
+Textual front-end:
+
+- **`_scb_core.py`** — the front-end-agnostic core. `load_rows(scb_dir, games,
+  launch_options)` turns the installed games plus their launch options into an
+  ordered list of frozen `ScbRow` values (game rows first by name, then orphan
+  rows), deriving each row's `active`/`missing`/`inactive`/`orphan` status
+  through `io.scopebuddy.observe`. It imports only dataclasses/pathlib,
+  `io.scopebuddy`, and `models` — **no Rich, Typer, Textual, or questionary** —
+  so the classification is unit-testable without a terminal.
+- **`tui/scb_app.py`** — `ScbApp`, the full-screen dashboard the bare
+  `scopebuddy` command launches on an interactive terminal (a second Textual
+  front-end under `tui/`). It drives `_scb_core.load_rows`, reloading the row
+  model after every mutation so the display mirrors disk. `i` bulk-creates
+  missing stubs; the per-row modal (`tui.widgets.ScbRowScreen`) inits a stub,
+  opens the `.conf` in `$EDITOR`, or deletes an orphan config — the delete
+  routes through `_checkpoint.make_checkpoint(trigger="scb-delete")` before
+  `io.scopebuddy.delete_config`.
+
 ## 5. Backup format
 
 Each checkpoint is a single `.tar.gz` produced atomically (written to a
@@ -280,7 +304,7 @@ users/<account>/localconfig.vdf       # one per affected user
 `manifest.json` records:
 
 - `created_at` — ISO-8601 local timestamp (naive, no timezone offset).
-- `trigger` — `manual`, `apply`, `clear`, or `shortcuts-edit`.
+- `trigger` — `manual`, `apply`, `clear`, `shortcuts-edit`, or `scb-delete`.
 - `system` — bool, whether `config.vdf` is in the archive.
 - `users` — list of account names with `localconfig.vdf` in the archive.
 - `files` — the archive contents.
@@ -342,7 +366,7 @@ that section.
 
 ## 7. Testing
 
-316 tests under `tests/`, driven by `pytest` with synthetic VDF and TOML
+333 tests under `tests/`, driven by `pytest` with synthetic VDF and TOML
 fixtures. The `fake_steam` fixture in `conftest.py` builds a self-contained
 Steam tree in `tmp_path` so tests never touch the real Steam install.
 
@@ -361,6 +385,7 @@ Tests that need to bypass production paths set env vars honored by
 - `STEAM_MANAGER_BACKUP_ROOT` — overrides the backup directory.
 - `STEAM_MANAGER_USER_POLICY` — overrides the user policy file path.
 - `STEAM_MANAGER_SCB_DIR` — overrides the ScopeBuddy configs dir.
+- `STEAM_MANAGER_SCB_UI` — picks the bare `scopebuddy` front-end (`tui`/`observe`).
 - `STEAM_MANAGER_COMPAT_DIRS` — colon-separated system-wide
   `compatibilitytools.d/` dirs (an autouse fixture sets it empty so real
   system Proton builds never leak into tests).
@@ -385,6 +410,9 @@ rules listed in section 3. The rules tested:
 - `cli/` must consume `io/` only through its public (non-`_`) API
 - `cli/_wizard_core.py` stays render-free: none of `_drift`/`_targets`/
   `render`/questionary/textual (the shared edit core works without a terminal)
+- `cli/_scb_core.py` stays render-free on the same rule: none of `render`/
+  `_drift`/`_targets`/questionary/textual (the ScopeBuddy dashboard core works
+  without a terminal)
 - `textual` may be imported **only** under `cli/tui/`, and nothing outside
   `cli/tui/` may import `cli.tui` at module scope (so non-TUI commands never
   load Textual at startup)

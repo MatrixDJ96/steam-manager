@@ -104,8 +104,9 @@ steam-manager restore          # interactive picker
 ### ScopeBuddy helpers
 
 ```bash
-steam-manager scopebuddy       # find missing or orphan configs (alias: scb)
-steam-manager scopebuddy init  # generate missing stubs
+steam-manager scopebuddy         # dashboard TUI on a terminal (alias: scb)
+steam-manager scopebuddy observe # scriptable missing/orphan report
+steam-manager scopebuddy init    # generate missing stubs
 ```
 
 ### Non-Steam shortcuts
@@ -130,7 +131,8 @@ flags, and exit codes see [`docs/REFERENCE.md`](docs/REFERENCE.md).
   with an interactive restore command.
 - Operates on the active local account, on a specific account, or on all
   local accounts.
-- Observes ScopeBuddy per-game stubs and generates them on demand.
+- Observes ScopeBuddy per-game stubs, generates them on demand, and manages
+  them from a full-screen dashboard.
 - Edits Steam's binary `shortcuts.vdf` (non-Steam games) via a JSON
   round-trip in `$EDITOR`, preserving int32/string typing.
 
@@ -196,7 +198,7 @@ documented in [`docs/REFERENCE.md`](docs/REFERENCE.md).
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                         # 316 tests, all hermetic (-m "not tui" for the sub-2s lane)
+pytest                         # 333 tests, all hermetic (-m "not tui" for the sub-2s lane)
 ```
 
 Architecture, module APIs, and the build pipeline are documented in

@@ -91,7 +91,7 @@ Same five panels as `steam-manager --help`.
 
 | Command              | Description |
 |----------------------|-------------|
-| `scopebuddy` / `scb` | ScopeBuddy: `observe` (default) + `init` (per AppID, `--missing`, interactive). `scb` is a short hidden alias. |
+| `scopebuddy` / `scb` | Manage per-game ScopeBuddy configs. The bare command opens the dashboard TUI on an interactive terminal and prints the `observe` report over a pipe (`STEAM_MANAGER_SCB_UI=tui\|observe` forces one). Sub-commands: `observe` (missing/orphan report), `init` (per AppID, `--missing`, interactive). `scb` is a short hidden alias. |
 | `shortcuts` / `sct`  | Edit Steam's binary `shortcuts.vdf` (non-Steam games). `path`, `show`, `edit`. `sct` is a short hidden alias. |
 | `open &lt;appid&gt;`       | Open the game's install folder (or `--compat` for compatdata) via `xdg-open`. |
 
@@ -213,7 +213,10 @@ users/&lt;other-account&gt;/localconfig.vdf
 ```
 
 `shortcuts edit` checkpoints hold `users/&lt;account&gt;/shortcuts.vdf` instead;
-`restore` maps every member kind back to its live location.
+deleting an orphan config from the ScopeBuddy dashboard writes a `scb-delete`
+checkpoint holding `scopebuddy/&lt;stem&gt;.conf`. `restore` maps every member kind
+back to its live location — the ScopeBuddy member back to
+`~/.config/scopebuddy/games/steam/&lt;stem&gt;.conf`.
 
 Archives are written to a `.tmp` file first, then `rename(2)` into place —
 no partial-checkpoint states are possible. Auto-pruned to the most recent
@@ -278,6 +281,7 @@ remain.
 | `STEAM_MANAGER_VERSION`        | Used by `scripts/install.sh` to pin to a specific release tag.          |
 | `STEAM_MANAGER_USER_POLICY`    | Override the path written by `config set`/`unset` and the wizard.       |
 | `STEAM_MANAGER_CONFIG_UI`      | Pick the `config` editor front-end: `tui` or `classic`. A `--tui`/`--classic` flag overrides it; an unrecognized value is ignored. |
+| `STEAM_MANAGER_SCB_UI`         | Pick the bare `scopebuddy` front-end: `tui` (dashboard) or `observe` (report). Overrides the terminal-interactivity default; an unrecognized value is ignored. |
 | `STEAM_MANAGER_NO_UPDATE_NOTIFIER` | Silence the post-command "new release available" hint (any value).  |
 | `STEAM_MANAGER_UPDATE_REPO`    | Override the GitHub repo (`MatrixDJ96/steam-manager`) for `update`.     |
 | `STEAM_MANAGER_UPDATE_STATE`   | Override the notifier's cache file path (testing convenience).          |

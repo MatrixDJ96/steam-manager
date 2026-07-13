@@ -165,7 +165,7 @@ def restore(
     yes: bool = typer.Option(False, "--yes", help="Skip confirmation"),
     force: bool = typer.Option(False, "--force", help="Ignore Steam-running check"),
 ):
-    """Restore a previous checkpoint archive (config.vdf, per-user localconfig.vdf, and any archived shortcuts.vdf)."""
+    """Restore a previous checkpoint archive (config.vdf, per-user localconfig.vdf, and any archived shortcuts.vdf or ScopeBuddy configs)."""
     check_steam_closed(force)
 
     ctx = discovery.discover(steam_root=steam_root())

@@ -244,13 +244,42 @@ disables it (don't unless you know what you're doing).
 ## Generate ScopeBuddy stubs for every game with `scopebuddy --` in its launch options
 
 ```bash
-steam-manager scopebuddy        # see which games are missing a stub (alias: scb)
+steam-manager scopebuddy observe   # see which games are missing a stub (alias: scb)
 steam-manager scopebuddy init --missing
 ```
 
 The stub is intentionally minimal — two comment lines — so you can fill it
-in by hand later. Run `steam-manager scopebuddy` again to verify nothing is
-missing.
+in by hand later. Run `steam-manager scopebuddy observe` again to verify
+nothing is missing.
+
+## Manage ScopeBuddy configs from the dashboard
+
+On an interactive terminal the bare command opens a full-screen dashboard:
+
+```bash
+steam-manager scopebuddy           # dashboard TUI on a terminal (alias: scb)
+```
+
+The dashboard lists every installed game with its scopebuddy status
+(`active`, `missing`, or `inactive`) and whether its per-game `.conf` exists,
+plus a separate table of orphan configs (a `.conf` with no matching installed
+game). Move with `↑`/`↓`; `/` filters the games table, `r` reloads from disk,
+`q` quits.
+
+- `Enter` (or a click) on a row opens its action modal: create the L1 stub,
+  open the `.conf` in `$EDITOR`, or delete an orphan config.
+- `i` bulk-creates a stub for every `missing` row after a confirmation.
+- Deleting an orphan config writes a `.tar.gz` checkpoint first, so
+  `steam-manager restore` rolls it back.
+
+Over a pipe or a non-interactive stream the same command prints the scriptable
+`observe` report instead. `STEAM_MANAGER_SCB_UI=tui|observe` forces a
+front-end, and `steam-manager scopebuddy observe` prints the report on any
+terminal:
+
+```bash
+steam-manager scopebuddy observe   # missing/orphan report, exit 1 on issues
+```
 
 ## Pin to a specific release when installing on a new machine
 
@@ -318,7 +347,7 @@ python3 -m venv ~/.venvs/steam-manager   # keep site-packages off NTFS
 ln -sf ~/.venvs/steam-manager .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                   # 316 hermetic tests (-m "not tui": &lt;2s)
+pytest                                   # 333 hermetic tests (-m "not tui": &lt;2s)
 ```
 
 The repository's `AGENTS.md` documents project-specific quirks (NTFS+btrfs
