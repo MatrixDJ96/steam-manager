@@ -17,12 +17,16 @@ config helpers.
 - It is **not** a Pyroveil manager. Per-game shader/runtime hacks in
   `~/.pyroveil/` are out of scope.
 
+Internals are documented in `docs/ARCHITECTURE.md`; build commands and
+conventions for contributors and coding agents are in `AGENTS.md`.
+
 ## Docs map
 
 | Document                                          | Audience                  | Contents                                                       |
 |---------------------------------------------------|---------------------------|----------------------------------------------------------------|
 | [README](README.md)                               | Everyone                  | What it is / is not.                                           |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)      | Contributor               | Internals.                                                     |
+| [AGENTS.md](AGENTS.md)                            | Contributor, all agents   | Build commands, conventions.                                   |
 
 ## License
 

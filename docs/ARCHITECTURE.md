@@ -26,6 +26,7 @@ modifies game files or `appmanifest_*.acf`.
 <repo>/
 ├── pyproject.toml
 ├── README.md                        # user-facing quickstart
+├── AGENTS.md                        # agent instructions: commands, conventions, gotchas
 ├── scripts/
 │   ├── build.sh                     # PyInstaller --onefile build (emits SHA256)
 └── docs/
