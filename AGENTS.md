@@ -14,6 +14,7 @@ pytest -m "not tui"                 # fast lane: skips the Textual Pilot tests
 pytest tests/test_architecture.py   # import-layering invariants only
 steam-manager --version             # proves the editable install resolves
 ./scripts/build.sh                  # dist/steam-manager + dist/steam-manager.sha256
+./scripts/smoke-tui.py              # both TUIs of the built binary open and quit in a PTY
 ```
 
 CI (`.github/workflows/ci.yml`) runs `pytest` on Python 3.11, 3.12 and 3.13 for pushes and
@@ -31,6 +32,8 @@ pull requests to `main`. `scripts/build.sh` activates `.venv` unless a venv is a
   engine, the Steam pid probe, the shared Rich tables, messages and questionary prompts.
 - `src/steam_manager/policies.toml` — the factory policy, bundled as package data.
 - `tests/conftest.py` — the `fake_steam` fixture, a synthetic Steam tree under `tmp_path`.
+- `scripts/` — `build.sh` (PyInstaller), `install.sh` (curl-pipe installer), `release.sh`
+  (GitHub release publisher), `smoke-tui.py` (PTY smoke of the frozen binary's TUIs).
 
 ## Conventions
 
@@ -52,6 +55,10 @@ pull requests to `main`. `scripts/build.sh` activates `.venv` unless a venv is a
 
 ## Gotchas
 
+- A TUI that passes `pytest` can still fail in the frozen binary, since the suite runs the
+  editable install: after touching `scripts/build.sh` or TUI imports, run `./scripts/build.sh`
+  then `./scripts/smoke-tui.py`. The TUI modules import their widgets at load time, so a widget
+  module missing from the bundle already fails the smoke's first screen.
 - Without `--collect-submodules textual` in `scripts/build.sh`, importing `Tab`, `TabPane` or
   `MarkdownViewer` from `textual.widgets` fails only in the frozen binary: their loader
   modules are not traced. Keep the flag; the measurement is in `docs/ARCHITECTURE.md` §6.

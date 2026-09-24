@@ -6,6 +6,9 @@ the [README](../README.md); for common scenarios see
 [`docs/HOWTO.md`](HOWTO.md); for the full configuration schema, exit codes,
 and operator reference see [`docs/REFERENCE.md`](REFERENCE.md).
 
+Contents: 1 overview · 2 goals and non-goals · 3 project layout · 4 module reference ·
+5 backup format · 6 build pipeline · 7 testing.
+
 ## 1. Overview
 
 `steam-manager` is a command-line tool that brings declarative configuration
@@ -62,6 +65,7 @@ this with AST inspection.
 │   ├── build.sh                     # PyInstaller --onefile build (emits SHA256)
 │   ├── install.sh                   # one-line installer with version pin + SHA256 verify
 │   ├── release.sh                   # GitHub release publisher (pinned Install section)
+│   └── smoke-tui.py                 # PTY smoke of both TUIs in the frozen binary
 ├── src/steam_manager/
 │   ├── __init__.py                  # __version__ (paired with pyproject.toml)
 │   ├── __main__.py                  # python -m steam_manager → cli.main()
@@ -370,6 +374,22 @@ The TUI stylesheet `app.tcss` is package data and rides the wheel via the
 existing `--collect-data steam_manager`. `scripts/build.sh` also
 collects the `rich_click` submodules and declares `vdf`, `questionary` and
 `tomlkit` as hidden imports.
+
+`pytest` runs the editable install and cannot catch a packaging-only failure,
+so a build is verified by opening both TUIs from the frozen binary in a
+pseudo-terminal:
+
+```bash
+./scripts/smoke-tui.py                        # checks dist/steam-manager
+./scripts/smoke-tui.py path/to/steam-manager  # checks another build
+```
+
+`scripts/smoke-tui.py` (stdlib Python, no extra package) starts `config` and
+`scopebuddy` against a throwaway Steam tree with one account and no games,
+waits for each header (`steam-manager · config`, `steam-manager · scopebuddy`),
+sends `q`, and exits 1 on a missing header, a traceback, a non-zero exit or a
+20-second timeout. Its `STEAM_MANAGER_*` overrides point every path the binary
+writes into its throwaway directory, so the live install is never touched.
 
 `scripts/install.sh` is the one-line installer published at
 `raw.githubusercontent.com/MatrixDJ96/steam-manager/main/scripts/install.sh`.
